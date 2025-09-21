@@ -181,7 +181,7 @@ export default function Home() {
       
     } catch (err) {
       console.error('Error loading data:', err)
-      setError(`Failed to load data: ${err.message || 'Unknown error'}`)
+      setError(`Failed to load data: ${(err instanceof Error ? err.message : String(err)) || 'Unknown error'}`)
     } finally {
       setLoading(false)
     }
