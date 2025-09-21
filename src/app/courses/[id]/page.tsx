@@ -289,7 +289,7 @@ export default function IndividualCoursePage({ params }: Props) {
                                 href={`/races/${meet.id}`}
                                 className="font-bold text-green-600 hover:text-green-800 transition-colors"
                               >
-                                {meet.name}
+                                {(meet as any).name || "Unknown Meet"}
                               </a>
                             </td>
                             <td className="py-3 px-4 text-black">
