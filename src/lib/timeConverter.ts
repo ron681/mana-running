@@ -2,7 +2,7 @@
 class TimeConverter {
   
   // Convert any time format to hundredths for database storage
-  static timeToHundredths(timeString) {
+  static timeToHundredths(timeString: string) {
     if (!timeString || typeof timeString !== 'string') return null;
     
     const parts = timeString.split(':');
@@ -37,7 +37,7 @@ class TimeConverter {
   }
   
   // Convert hundredths back to display format
-  static hundredthsToDisplay(hundredths, showHundredths = true) {
+  static hundredthsToDisplay(hundredths: number, showHundredths = true) {
     if (!hundredths) return '';
     
     const totalSeconds = hundredths / 100;
@@ -53,7 +53,7 @@ class TimeConverter {
   }
   
   // Smart display based on precision available
-  static smartDisplay(hundredths) {
+  static smartDisplay(hundredths: number) {
     if (!hundredths) return '';
     
     // Check if it's a "round" hundredths value (ends in 0)
@@ -69,7 +69,7 @@ class TimeConverter {
   }
   
   // Detect precision level of original time
-  static getPrecisionLevel(hundredths) {
+  static getPrecisionLevel(hundredths: number) {
     if (!hundredths) return 'unknown';
     
     if (hundredths % 100 === 0) return 'seconds';
@@ -100,10 +100,10 @@ console.log("---------------------------------------------------");
 
 testCases.forEach(test => {
   const hundredths = TimeConverter.timeToHundredths(test.input);
-  const smartDisplay = TimeConverter.smartDisplay(hundredths);
-  const precision = TimeConverter.getPrecisionLevel(hundredths);
+  const smartDisplay = hundredths ? TimeConverter.smartDisplay(hundredths) : "";
+  const precision = hundredths ? TimeConverter.getPrecisionLevel(hundredths) : "unknown";
   
-  console.log(`${test.input.padEnd(10)} → ${hundredths.toString().padEnd(8)} → ${smartDisplay.padEnd(11)} → ${precision}`);
+  console.log(`${test.input.padEnd(10)} → ${(hundredths !== null ? hundredths.toString() : '').padEnd(8)} → ${smartDisplay.padEnd(11)} → ${precision}`);
 });
 
 // For your database schema, add a precision indicator
@@ -121,10 +121,20 @@ console.log("- precision_level: VARCHAR (seconds/tenths/hundredths)");
 console.log("- Use smartDisplay() for showing times in UI");
 
 // For your CSV processing
-function processResultsCSV(csvData) {
+type CSVRow = {
+  Athlete: string;
+  Duration: string;
+  Event: string;
+  Date: string;
+  Course: string;
+  Season: string;
+  Grade: string;
+};
+
+function processResultsCSV(csvData: CSVRow[]) {
   return csvData.map(row => {
     const timeHundredths = TimeConverter.timeToHundredths(row.Duration);
-    const precisionLevel = TimeConverter.getPrecisionLevel(timeHundredths);
+    const precisionLevel = timeHundredths !== null ? TimeConverter.getPrecisionLevel(timeHundredths) : "unknown";
     
     // Parse athlete name
     const [lastName, rest] = row.Athlete.split(',');

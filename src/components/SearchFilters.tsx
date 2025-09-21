@@ -660,9 +660,9 @@ if (filters.searchTerm) {
                             className="font-medium text-blue-600 hover:text-blue-800 hover:underline cursor-pointer"
                           >
                            
-{result.first_name && result.last_name 
-  ? `${result.first_name} ${result.last_name}`
-  : result.athlete_name || 'Unknown Athlete'
+{(result as any).first_name && (result as any).last_name 
+  ? `${(result as any).first_name} ${(result as any).last_name}`
+  : (result as any).athlete_name || 'Unknown Athlete'
 }
 
 

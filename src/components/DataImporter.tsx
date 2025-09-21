@@ -201,7 +201,7 @@ const DataImporter = () => {
     const response = await readFileAsText(files.athletes);
     const lines = response.split('\n').slice(1); // Skip header
     
-    const athletes = [];
+    const athletes: any[] = [];
     const schoolsSet = new Set<string>();
 
     lines
@@ -297,7 +297,7 @@ const DataImporter = () => {
     });
 
     const meets = new Map();
-    const results = [];
+    const results: any[] = [];
     let processedLines = 0;
 
     lines
