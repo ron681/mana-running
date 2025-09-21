@@ -81,7 +81,7 @@ export default function RacesPage() {
   const years = [...new Set(meets.map(m => {
     const meetDate = new Date(m.date);
     return !isNaN(meetDate.getTime()) ? meetDate.getFullYear().toString() : null;
-  }).filter(Boolean))].sort((a, b) => b.localeCompare(a))
+  }).filter(Boolean))].sort((a, b) => (b as string).localeCompare(a as string))
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
