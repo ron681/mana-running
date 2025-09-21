@@ -107,7 +107,7 @@ export default function AdminPage() {
       
     } catch (error) {
       console.error('Error deleting race results:', error)
-      alert('Error deleting race results: ' + error.message)
+      alert('Error deleting race results: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setIsDeleting(false)
     }
