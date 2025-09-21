@@ -293,7 +293,7 @@ export default function IndividualCoursePage({ params }: Props) {
                               </a>
                             </td>
                             <td className="py-3 px-4 text-black">
-                              {formatDate(meet.meet_date)}
+                              {formatDate((meet as any).meet_date || new Date())}
                             </td>
                             <td className="py-3 px-4">
                               <span className={`px-2 py-1 rounded text-sm font-semibold ${
