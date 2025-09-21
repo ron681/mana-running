@@ -139,7 +139,7 @@ export default function AdminPage() {
       
     } catch (error) {
       console.error('Error updating athlete:', error)
-      alert('Error updating athlete: ' + error.message)
+      alert('Error updating athlete: ' + (error instanceof Error ? error.message : String(error)))
     } finally {
       setIsEditing(false)
     }
