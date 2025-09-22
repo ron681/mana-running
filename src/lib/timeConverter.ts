@@ -155,3 +155,22 @@ function processResultsCSV(csvData: CSVRow[]) {
     };
   });
 }
+// Simple wrapper functions for common use cases
+export const formatTime = (centiseconds: number): string => {
+  return TimeConverter.hundredthsToDisplay(centiseconds);
+}
+
+export const parseTime = (timeString: string): number | null => {
+  return TimeConverter.timeToHundredths(timeString);
+}
+
+export const calculatePace = (centiseconds: number, distanceMiles: number): string => {
+  if (!centiseconds || !distanceMiles || distanceMiles <= 0) return '--:--';
+  
+  const totalSeconds = centiseconds / 100;
+  const paceSeconds = totalSeconds / distanceMiles;
+  const paceMinutes = Math.floor(paceSeconds / 60);
+  const remainingSeconds = Math.floor(paceSeconds % 60);
+  
+  return `${paceMinutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+}

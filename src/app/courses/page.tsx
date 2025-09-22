@@ -9,9 +9,12 @@ interface Course {
   distance_meters: number
   distance_miles: number
   difficulty_rating: number
+  rating: number
   rating_confidence: string
   total_results_count: number
   meets_count?: number
+  display_rating: number  // Added by CRUD operation
+  has_calculated_rating: boolean  // Added by CRUD operation
 }
 
 export default function CoursesPage() {
@@ -49,6 +52,12 @@ export default function CoursesPage() {
     }
   }
 
+  // Helper function to get the best available rating
+  const getCourseRating = (course: Course): number => {
+    // Prefer calculated rating, fallback to difficulty_rating, then 0
+    return course.rating ?? course.difficulty_rating ?? 0
+  }
+
   // Filter courses based on search and distance
   const filteredCourses = courses.filter(course => {
     const matchesSearch = !searchTerm || 
@@ -71,17 +80,17 @@ export default function CoursesPage() {
     .sort((a, b) => a - b)
 
   const getDifficultyColor = (rating: number) => {
-    if (rating >= 1.0) return 'bg-red-100 text-red-800'
-    if (rating >= 0.5) return 'bg-yellow-100 text-yellow-800'
-    if (rating >= 0.0) return 'bg-green-100 text-green-800'
-    return 'bg-gray-100 text-gray-800'
+    if (rating >= 1.025) return 'bg-red-100 text-red-800'      // Extremely Hard
+    if (rating >= 1.000) return 'bg-orange-100 text-orange-800' // Hard  
+    if (rating >= 0.975) return 'bg-yellow-100 text-yellow-800' // Moderate
+    return 'bg-green-100 text-green-800'                        // Fast
   }
 
   const getDifficultyLabel = (rating: number) => {
-    if (rating >= 1.0) return 'Very Hard'
-    if (rating >= 0.5) return 'Moderate'
-    if (rating >= 0.0) return 'Easy'
-    return 'Unknown'
+    if (rating >= 1.025) return 'Extremely Hard'
+    if (rating >= 1.000) return 'Hard'
+    if (rating >= 0.975) return 'Moderate'
+    return 'Fast'
   }
 
   if (loading) {
@@ -208,64 +217,79 @@ export default function CoursesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {currentCourses.map((course) => (
-                    <tr key={course.id} className="border-b hover:bg-gray-50">
-                      <td className="py-4 px-4">
-                        <a 
-                          href={`/courses/${course.id}`}
-                          className="text-lg font-bold text-green-600 hover:text-green-800 transition-colors"
-                        >
-                          {course.name}
-                        </a>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="text-sm">
-                          <div className="font-medium text-black">
-                            {course.distance_miles?.toFixed(2)} miles
-                          </div>
-                          <div className="text-gray-500">
-                            {course.distance_meters}m
-                          </div>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
-                        {course.difficulty_rating !== null ? (
-                          <div className="flex flex-col space-y-1">
-                            <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.difficulty_rating)}`}>
-                              {getDifficultyLabel(course.difficulty_rating)}
-                            </span>
-                            <span className="text-xs text-gray-500">
-                              {course.difficulty_rating.toFixed(3)}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
-                            Not Rated
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <span className="px-2 py-1 rounded text-sm font-semibold bg-blue-100 text-blue-800">
-                          {course.meets_count || 0}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4 text-center">
-                        <span className="px-2 py-1 rounded text-sm font-semibold bg-green-100 text-green-800">
-                          {course.total_results_count || 0}
-                        </span>
-                      </td>
-                      <td className="py-4 px-4">
-                        <div className="flex space-x-2">
+                  {currentCourses.map((course) => {
+                    const courseRating = getCourseRating(course)
+                    const isCalculatedRating = course.rating !== null && course.rating !== undefined
+                    
+                    return (
+                      <tr key={course.id} className="border-b hover:bg-gray-50">
+                        <td className="py-4 px-4">
                           <a 
                             href={`/courses/${course.id}`}
-                            className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+                            className="text-lg font-bold text-green-600 hover:text-green-800 transition-colors"
                           >
-                            View Details
+                            {course.name}
                           </a>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="text-sm">
+                            <div className="font-medium text-black">
+                              {course.distance_miles?.toFixed(2)} miles
+                            </div>
+                            <div className="text-gray-500">
+                              {course.distance_meters}m
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-4 px-4">
+                          {course.display_rating !== null ? (
+                            <div className="flex flex-col space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.display_rating)}`}>
+                                  {getDifficultyLabel(course.display_rating)}
+                                </span>
+                                {course.has_calculated_rating && (
+                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                                    Calculated
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {course.display_rating.toFixed(3)}
+                                {!course.has_calculated_rating && (
+                                  <span className="ml-1 text-gray-400">(estimated)</span>
+                                )}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
+                              Not Rated
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="px-2 py-1 rounded text-sm font-semibold bg-blue-100 text-blue-800">
+                            {course.meets_count || 0}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4 text-center">
+                          <span className="px-2 py-1 rounded text-sm font-semibold bg-green-100 text-green-800">
+                            {course.total_results_count || 0}
+                          </span>
+                        </td>
+                        <td className="py-4 px-4">
+                          <div className="flex space-x-2">
+                            <a 
+                              href={`/courses/${course.id}`}
+                              className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+                            >
+                              View Details
+                            </a>
+                          </div>
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

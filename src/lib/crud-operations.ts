@@ -56,6 +56,8 @@ export const athleteCRUD = {
     return data;
   },
 
+
+  
   
   async update(id: string, updates: Partial<{
   first_name: string;
@@ -213,22 +215,33 @@ export const meetCRUD = {
 // ==================== COURSE CRUD OPERATIONS ====================
 
 export const courseCRUD = {
-  // GET: Fetch all courses with meet count
+  // GET: Fetch all courses with meet count and proper rating handling
   async getAll() {
     const { data, error } = await supabase
       .from('courses')
       .select(`
-        *,
+        id,
+        created_at,
+        name,
+        distance_meters,
+        distance_miles,
+        difficulty_rating,
+        rating,
+        rating_confidence,
+        rating_last_updated,
+        total_results_count,
         meets(count)
       `)
-      .order
-
-      ('name');
+      .order('name');
     
     if (error) throw error;
+    
     return data?.map(course => ({
       ...course,
-      meets_count: course.meets[0]?.count || 0
+      meets_count: course.meets[0]?.count || 0,
+      // Helper property for display - prefers calculated rating
+      display_rating: course.rating ?? course.difficulty_rating ?? 0,
+      has_calculated_rating: course.rating !== null && course.rating !== undefined
     }));
   },
 
@@ -244,31 +257,31 @@ export const courseCRUD = {
       .single();
     
     if (error) throw error;
-  return data;
-},
+    return data;
+  },
 
-// POST: Create new course
-async create(meetData: { 
-  name: string; 
-  date: string;  // This should map to meet_date in the database
-  course_id: string; 
-  meet_type: string 
-}) {
-  const { data, error } = await supabase
-    .from('meets')
-    .insert({
-      name: meetData.name,
-      meet_date: meetData.date,  // Map date parameter to meet_date column
-      course_id: meetData.course_id,
-      meet_type: meetData.meet_type
-    })
-    .select()
-    .single();
-    
-  if (error) throw error;
-  return data;
-},
-
+  // POST: Create new course (this function looks wrong - it's creating meets, not courses)
+  // This should probably be moved to meetCRUD or renamed
+  async create(meetData: { 
+    name: string; 
+    date: string;
+    course_id: string; 
+    meet_type: string 
+  }) {
+    const { data, error } = await supabase
+      .from('meets')
+      .insert({
+        name: meetData.name,
+        meet_date: meetData.date,
+        course_id: meetData.course_id,
+        meet_type: meetData.meet_type
+      })
+      .select()
+      .single();
+      
+    if (error) throw error;
+    return data;
+  },
 
   // PUT: Update course
   async update(id: string, updates: Partial<{
@@ -276,6 +289,7 @@ async create(meetData: {
     distance: string;
     surface_type: string;
     difficulty_rating: number;
+    rating: number; // Add calculated rating updates
   }>) {
     const { data, error } = await supabase
       .from('courses')
@@ -345,7 +359,7 @@ export const resultCRUD = {
       .from('results')
       .select(`
         *,
-        athlete:athletes(first_name, last_name, school:schools(name))
+        athlete:athletes(id, first_name, last_name, graduation_year, school:schools(name))
       `)
       .eq('meet_id', meetId)
       .order('place_overall');
@@ -464,7 +478,6 @@ export const resultCRUD = {
     return count;
   }
 };
-
 
 
 

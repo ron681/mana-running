@@ -9,12 +9,24 @@ import {
   resultCRUD 
 } from '@/lib/crud-operations'
 
+import { 
+  formatTime 
+} from '@/lib/timeConverter'
+
+
+
+
+
 interface Stats {
   schools: number
   athletes: number
   courses: number
   results: number
 }
+
+
+
+
 
 interface RecentMeet {
   id: string
@@ -137,18 +149,14 @@ export default function Home() {
 
         const boysResults = recentResults
           .filter(result => 
-            result.gender === 'Boys' || 
-            result.gender === 'M' || 
-            result.gender === 'Male'
+            result.gender === 'M' 
           )
           .sort((a, b) => a.time_seconds - b.time_seconds)
           .slice(0, 5)
 
         const girlsResults = recentResults
           .filter(result => 
-            result.gender === 'Girls' || 
-            result.gender === 'F' || 
-            result.gender === 'Female'
+            result.gender === 'F' 
           )
           .sort((a, b) => a.time_seconds - b.time_seconds)
           .slice(0, 5)
@@ -242,18 +250,14 @@ export default function Home() {
 
     const boys = improvements
       .filter(mover => 
-        mover.gender === 'Boys' || 
-        mover.gender === 'M' || 
-        mover.gender === 'Male'
+        mover.gender === 'M' 
       )
       .sort((a, b) => b.improvement_percentage - a.improvement_percentage)
       .slice(0, 5)
 
     const girls = improvements
       .filter(mover => 
-        mover.gender === 'Girls' || 
-        mover.gender === 'F' || 
-        mover.gender === 'Female'
+        mover.gender === 'M' 
       )
       .sort((a, b) => b.improvement_percentage - a.improvement_percentage)
       .slice(0, 5)
@@ -261,11 +265,6 @@ export default function Home() {
     return { boys, girls }
   }
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -533,10 +532,7 @@ export default function Home() {
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
+
 
 {/* Girls Big Movers */}
 <div>
@@ -563,6 +559,15 @@ export default function Home() {
     </div>
   )}
 </div>
+  
+
+
+
+
+              </div>
+            </div>
+          </div>
+        </div>
 
         {/* Top Performances */}
         <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden mb-12">

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { meetCRUD, resultCRUD } from '@/lib/crud-operations'
+import { formatTime } from '@/lib/timeConverter'
+import { getGradeDisplay } from '@/lib/grade-utils'
 
 interface Meet {
   id: string
@@ -71,12 +73,6 @@ export default function IndividualRacePage({ params }: Props) {
     }
   }
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
-
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     if (isNaN(date.getTime())) return 'Invalid Date'
@@ -85,6 +81,17 @@ export default function IndividualRacePage({ params }: Props) {
       month: 'long',
       day: 'numeric'
     })
+  }
+
+  // Helper function to get grade color based on grade level
+  const getGradeColor = (grade: string) => {
+    switch (grade) {
+      case '12': return 'bg-red-100 text-red-800'
+      case '11': return 'bg-orange-100 text-orange-800'
+      case '10': return 'bg-yellow-100 text-yellow-800'
+      case '9': return 'bg-green-100 text-green-800'
+      default: return 'bg-gray-100 text-gray-800'
+    }
   }
 
   if (loading) {
@@ -191,65 +198,68 @@ export default function IndividualRacePage({ params }: Props) {
                 <tbody>
                   {results
                     .sort((a, b) => a.place_overall - b.place_overall)
-                    .map((result) => (
-                      <tr key={result.id} className="border-b hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center">
-                            <span className={`font-bold text-lg ${
-                              result.place_overall <= 3 ? 'text-yellow-600' :
-                              result.place_overall <= 10 ? 'text-blue-600' :
-                              'text-black'
-                            }`}>
-                              {result.place_overall}
+                    .map((result) => {
+                      const grade = result.athlete.graduation_year 
+                        ? getGradeDisplay(result.athlete.graduation_year, meet.meet_date)
+                        : 'N/A';
+                      
+                      return (
+                        <tr key={result.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <div className="flex items-center">
+                              <span className={`font-bold text-lg ${
+                                result.place_overall <= 3 ? 'text-yellow-600' :
+                                result.place_overall <= 10 ? 'text-blue-600' :
+                                'text-black'
+                              }`}>
+                                {result.place_overall}
+                              </span>
+                              {result.place_overall === 1 && (
+                                <span className="ml-2 text-yellow-500">🥇</span>
+                              )}
+                              {result.place_overall === 2 && (
+                                <span className="ml-2 text-gray-400">🥈</span>
+                              )}
+                              {result.place_overall === 3 && (
+                                <span className="ml-2 text-yellow-600">🥉</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <a 
+                              href={`/athletes/${result.athlete.id}`}
+                              className="font-bold text-blue-600 hover:text-blue-800 transition-colors"
+                            >
+                              {result.athlete.first_name} {result.athlete.last_name}
+                            </a>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-medium text-black">
+                              {result.athlete.school?.name || 'N/A'}
                             </span>
-                            {result.place_overall === 1 && (
-                              <span className="ml-2 text-yellow-500">🥇</span>
-                            )}
-                            {result.place_overall === 2 && (
-                              <span className="ml-2 text-gray-400">🥈</span>
-                            )}
-                            {result.place_overall === 3 && (
-                              <span className="ml-2 text-yellow-600">🥉</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <a 
-                            href={`/athletes/${result.athlete.id}`}
-                            className="font-bold text-blue-600 hover:text-blue-800 transition-colors"
-                          >
-                            {result.athlete.first_name} {result.athlete.last_name}
-                          </a>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-medium text-black">
-                            {result.athlete.school?.name || 'N/A'}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
-                            {result.athlete.graduation_year ? 
-                              `'${result.athlete.graduation_year.toString().slice(-2)}` : 
-                              'N/A'
-                            }
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-mono text-lg font-bold text-black">
-                            {formatTime(result.time_seconds)}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          {result.place_team ? (
-                            <span className="px-2 py-1 rounded text-sm bg-blue-100 text-blue-800">
-                              {result.place_team}
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            <span className={`px-2 py-1 rounded text-sm font-semibold ${getGradeColor(grade)}`}>
+                              {grade}
                             </span>
-                          ) : (
-                            <span className="text-gray-400">N/A</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="font-mono text-lg font-bold text-black">
+                              {formatTime(result.time_seconds)}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {result.place_team ? (
+                              <span className="px-2 py-1 rounded text-sm bg-blue-100 text-blue-800">
+                                {result.place_team}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">N/A</span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
                 </tbody>
               </table>
             </div>

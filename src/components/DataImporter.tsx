@@ -178,7 +178,7 @@ export default function EnhancedDataImporter() {
         // Extract meet info for preview
         const meetData = extractMeetInfo(data, selectedFile.name);
         setMeetInfo(meetData);
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error previewing file:', error);
         setStats(prev => ({ 
           ...prev, 
@@ -270,13 +270,12 @@ export default function EnhancedDataImporter() {
         message: 'Setting up meet record in database' 
       });
       
-      const meetData = {
-        name: meetInfo.name,
-        meet_date: meetInfo.date, // Changed back to meet_date - this is likely what your table expects
-        course_id: courseData.id,
-        meet_type: 'Regular'
-      };
-
+const meetData = {
+  name: meetInfo.name,
+  meet_date: meetInfo.date,  // Changed back to meet_date
+  course_id: courseData.id,
+  meet_type: 'Regular'
+};
       const meet = await meetCRUD.create(meetData);
 
       // Stage 5: Get existing data
@@ -359,13 +358,13 @@ export default function EnhancedDataImporter() {
             new Date(meetInfo.date).getFullYear()
           );
           
-          athlete = await athleteCRUD.create({
-            first_name: firstName,
-            last_name: lastName,
-            graduation_year: graduationYear,
-            gender: (row.Gender === 'M' || row.Gender === 'F') ? row.Gender : undefined,
-            current_school_id: school.id
-          });
+ athlete = await athleteCRUD.create({
+    first_name: firstName,
+    last_name: lastName,
+    graduation_year: graduationYear,
+    gender: row.Gender === 'Boys' ? 'M' : row.Gender === 'Girls' ? 'F' : undefined,
+    current_school_id: school.id
+  });
           
           setStats(prev => ({ 
             ...prev, 
@@ -398,7 +397,7 @@ export default function EnhancedDataImporter() {
             const resultData = {
               athlete_id: athlete.id,
               meet_id: meet.id,
-              time_seconds: Math.round(timeInSeconds * 100), // Store as centiseconds (e.g., 783.60 → 78360)
+              time_seconds: timeInSeconds, // Store as centiseconds (e.g., 783.60 → 78360)
               place_overall: row.Place || 0,
               season_year: new Date(meetInfo.date).getFullYear()
             };

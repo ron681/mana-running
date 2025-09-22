@@ -38,10 +38,7 @@ export function timeToSeconds(timeString: string): number {
   }
 
   try {
-    // Handle different time formats
     const cleanTime = timeString.trim();
-    
-    // Format: MM:SS.SS or MM:SS
     const timePattern = /^(\d{1,2}):(\d{2})(?:\.(\d{1,2}))?$/;
     const match = cleanTime.match(timePattern);
     
@@ -50,18 +47,8 @@ export function timeToSeconds(timeString: string): number {
       const seconds = parseInt(match[2], 10);
       const centiseconds = match[3] ? parseInt(match[3].padEnd(2, '0'), 10) : 0;
       
-      return minutes * 60 + seconds + (centiseconds / 100);
-    }
-    
-    // Format: SS.SS (seconds only)
-    const secondsPattern = /^(\d+)(?:\.(\d{1,2}))?$/;
-    const secondsMatch = cleanTime.match(secondsPattern);
-    
-    if (secondsMatch) {
-      const seconds = parseInt(secondsMatch[1], 10);
-      const centiseconds = secondsMatch[2] ? parseInt(secondsMatch[2].padEnd(2, '0'), 10) : 0;
-      
-      return seconds + (centiseconds / 100);
+      // Return centiseconds directly for database storage
+      return (minutes * 60 * 100) + (seconds * 100) + centiseconds;
     }
     
     return 0;
@@ -69,20 +56,6 @@ export function timeToSeconds(timeString: string): number {
     console.error('Error parsing time:', timeString, error);
     return 0;
   }
-}
-
-/**
- * Format seconds back to MM:SS.SS format
- */
-export function secondsToTimeString(totalSeconds: number): string {
-  if (totalSeconds <= 0) {
-    return '0:00.00';
-  }
-  
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  
-  return `${minutes}:${seconds.toFixed(2).padStart(5, '0')}`;
 }
 
 /**
