@@ -2,7 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { notFound, useRouter } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatTime } from '@/lib/timeConverter'
 
@@ -127,7 +127,15 @@ export default function AthletePage({ params }: { params: { id: string } }) {
         return
       }
 
-      setAthlete(athleteData)
+      // Fix the type issue - schools comes as an array but we need single object
+      const fixedAthleteData: Athlete = {
+        ...athleteData,
+        schools: Array.isArray(athleteData.schools) 
+          ? athleteData.schools[0] 
+          : athleteData.schools
+      }
+
+      setAthlete(fixedAthleteData)
 
       // Get results using results_with_details view (same as homepage)
       const { data: resultsData, error: resultsError } = await supabase
