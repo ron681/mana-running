@@ -1,637 +1,870 @@
-'use client'
+'use client';
 
-import React, { useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
-import { Upload, CheckCircle, AlertCircle, Database, Users, MapPin, Trophy, FileText } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Progress } from '@/components/ui/progress';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { 
+  FileText, 
+  Upload, 
+  AlertCircle, 
+  CheckCircle, 
+  Clock, 
+  Database,
+  Eye,
+  TrendingUp,
+  Users,
+  MapPin
+} from 'lucide-react';
+import Papa from 'papaparse';
+import { supabase } from '@/lib/supabase';
+import { 
+  courseCRUD,
+  schoolCRUD, 
+  athleteCRUD,
+  meetCRUD,
+  resultCRUD
+} from '@/lib/crud-operations';
+// import AddCourseModal from './AddCourseModal';
+// import CourseSelectionModal from './CourseSelectionModal';
+import { 
+  timeToSeconds, 
+  extractMeetInfo, 
+  validateCSVData, 
+  normalizeAthleteName, 
+  calculateGraduationYear,
+  formatFileSize
+} from '@/lib/import-utilities';
+
+interface ParsedData {
+  Place: number;
+  Grade: number;
+  Athlete: string;
+  Duration: string;
+  School: string;
+  Race: string;
+  Gender: string;
+}
+
+interface MeetInfo {
+  name: string;
+  date: string;
+  location: string;
+  distance: string;
+  distanceMeters: number;
+  distanceMiles: number;
+  courseName: string;
+}
+
+interface ImportProgress {
+  stage: string;
+  current: number;
+  total: number;
+  message: string;
+}
 
 interface ImportStats {
-  schools: number;
-  athletes: number;
-  courses: number;
-  meets: number;
-  results: number;
+  coursesCreated: number;
+  schoolsCreated: number;
+  athletesCreated: number;
+  resultsImported: number;
+  errors: string[];
 }
 
-interface FileData {
-  athletes: File | null;
-  courses: File | null;
-  results: File | null;
-}
-
-const DataImporter = () => {
-  const [importing, setImporting] = useState(false);
-  const [progress, setProgress] = useState('');
-  const [stats, setStats] = useState<ImportStats>({
-    schools: 0,
-    athletes: 0,
-    courses: 0,
-    meets: 0,
-    results: 0
+export default function EnhancedDataImporter() {
+  const [file, setFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [progress, setProgress] = useState<ImportProgress>({ 
+    stage: '', 
+    current: 0, 
+    total: 0, 
+    message: '' 
   });
-  const [errors, setErrors] = useState<string[]>([]);
-  const [completed, setCompleted] = useState(false);
-  const [files, setFiles] = useState<FileData>({
-    athletes: null,
-    courses: null,
-    results: null
+  const [stats, setStats] = useState<ImportStats>({ 
+    coursesCreated: 0, 
+    schoolsCreated: 0, 
+    athletesCreated: 0, 
+    resultsImported: 0, 
+    errors: [] 
   });
+  const [parsedData, setParsedData] = useState<ParsedData[]>([]);
+  const [meetInfo, setMeetInfo] = useState<MeetInfo | null>(null);
+  const [showCourseModal, setShowCourseModal] = useState(false);
+  const [showCourseSelectionModal, setShowCourseSelectionModal] = useState(false);
+  const [matchingCourses, setMatchingCourses] = useState<any[]>([]);
+  const [existingCourse, setExistingCourse] = useState<any>(null);
+  const [importComplete, setImportComplete] = useState(false);
+  const [dataPreview, setDataPreview] = useState<ParsedData[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Initialize Supabase client
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-
-  // File upload handlers
-  const handleFileUpload = (type: keyof FileData, file: File) => {
-    setFiles(prev => ({ ...prev, [type]: file }));
-  };
-
-  // Utility functions
-  const parseTime = (timeString: string): number => {
-    const parts = timeString.split(':');
-    if (parts.length !== 2) return 0;
-    
-    const minutes = parseInt(parts[0]);
-    const seconds = parseFloat(parts[1]);
-    return Math.round(minutes * 60 + seconds);
-  };
-
-  const parseDate = (dateString: string): string => {
-    // Convert "11/4/24" to "2024-11-04"
-    const parts = dateString.split('/');
-    if (parts.length !== 3) return new Date().toISOString().split('T')[0];
-    
-    let year = parseInt(parts[2]);
-    if (year < 100) year += 2000; // Convert 24 to 2024
-    
-    const month = parts[0].padStart(2, '0');
-    const day = parts[1].padStart(2, '0');
-    
-    return `${year}-${month}-${day}`;
-  };
-
-  const extractAthleteInfo = (athleteString: string) => {
-    // "Ketterer, Adrian | 2026" -> {lastName: "Ketterer", firstName: "Adrian", gradYear: 2026}
-    const parts = athleteString.split(' | ');
-    if (parts.length !== 2) return null;
-    
-    const namePart = parts[0].trim();
-    const gradYear = parseInt(parts[1]);
-    
-    const nameParts = namePart.split(', ');
-    if (nameParts.length !== 2) return null;
-    
-    return {
-      lastName: nameParts[0].trim(),
-      firstName: nameParts[1].trim(),
-      gradYear: gradYear
-    };
-  };
-
-  const readFileAsText = (file: File): Promise<string> => {
+  // Parse CSV file
+  const parseCSV = (file: File): Promise<ParsedData[]> => {
     return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = (e) => resolve(e.target?.result as string);
-      reader.onerror = reject;
-      reader.readAsText(file);
+      Papa.parse(file, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        transformHeader: (header) => header.trim(), // Clean headers
+        complete: (results) => {
+          if (results.errors.length > 0) {
+            const criticalErrors = results.errors.filter(e => e.type === 'Delimiter');
+            if (criticalErrors.length > 0) {
+              reject(new Error('CSV parsing failed: ' + criticalErrors.map(e => e.message).join(', ')));
+              return;
+            }
+          }
+          
+          // Validate the parsed data
+          const validation = validateCSVData(results.data);
+          if (!validation.isValid) {
+            reject(new Error('CSV validation failed: ' + validation.errors.join(', ')));
+            return;
+          }
+          
+          resolve(results.data as ParsedData[]);
+        },
+        error: reject
+      });
     });
   };
 
-  const startImport = async () => {
-    // Check if all files are uploaded
-    if (!files.courses || !files.athletes || !files.results) {
-      setErrors(['Please upload all three CSV files before starting import.']);
-      return;
-    }
-
-    setImporting(true);
-    setErrors([]);
-    setCompleted(false);
-    setStats({ schools: 0, athletes: 0, courses: 0, meets: 0, results: 0 });
-
+  // Check if course exists with smart matching
+  const checkCourseExists = async (meetInfo: MeetInfo) => {
     try {
-      // Step 1: Import Courses
-      setProgress('Importing courses...');
-      await importCourses();
+      console.log('Getting all courses...');
+      const courses = await courseCRUD.getAll();
+      console.log('Courses retrieved:', courses.length, 'courses');
+      
+      // Extract the base name (e.g., "Baylands" from "Baylands Park")
+      const baseName = meetInfo.courseName.replace(' Park', '').toLowerCase();
+      console.log('Looking for courses matching:', baseName);
+      
+      // Look for courses that contain the base name
+      const matchingCourses = courses.filter(course => {
+        if (!course || !course.name) return false;
+        const courseName = course.name.toLowerCase();
+        const matches = courseName.includes(baseName) || baseName.includes(courseName);
+        if (matches) {
+          console.log('Found matching course:', course.name);
+        }
+        return matches;
+      });
+      
+      console.log('Total matching courses found:', matchingCourses.length);
+      
+      return { matchingCourses, exactMatch: null };
+    } catch (error: any) {
+      console.error('Error checking courses:', error);
+      return { matchingCourses: [], exactMatch: null };
+    }
+  };
 
-      // Step 2: Import Athletes & Extract Schools
-      setProgress('Importing athletes and schools...');
-      await importAthletesAndSchools();
+  // Handle file selection and preview
+  const handleFileSelect = async (selectedFile: File) => {
+    setFile(selectedFile);
+    setImportComplete(false);
+    setDataPreview([]);
+    setMeetInfo(null);
+    
+    // If it's a CSV, show preview
+    if (selectedFile.type === 'text/csv' || selectedFile.name.endsWith('.csv')) {
+      try {
+        const data = await parseCSV(selectedFile);
+        setDataPreview(data.slice(0, 5)); // Show first 5 rows
+        
+        // Extract meet info for preview
+        const meetData = extractMeetInfo(data, selectedFile.name);
+        setMeetInfo(meetData);
+      } catch (error) {
+        console.error('Error previewing file:', error);
+        setStats(prev => ({ 
+          ...prev, 
+          errors: [`Preview error: ${error.message}`] 
+        }));
+      }
+    }
+  };
 
-      // Step 3: Import Results (creates meets automatically)
-      setProgress('Importing results and meets...');
-      await importResults();
+  // Main import process
+  const handleImport = async () => {
+    if (!file) return;
 
-      setProgress('Import completed successfully!');
-      setCompleted(true);
+    setIsImporting(true);
+    setImportComplete(false);
+    setStats({ coursesCreated: 0, schoolsCreated: 0, athletesCreated: 0, resultsImported: 0, errors: [] });
+    
+    try {
+      // Stage 1: Parse file
+      setProgress({ 
+        stage: 'Parsing file...', 
+        current: 5, 
+        total: 100, 
+        message: 'Reading and validating file data' 
+      });
+      
+      let data: ParsedData[];
+      if (file.type === 'text/csv' || file.name.endsWith('.csv')) {
+        data = await parseCSV(file);
+      } else {
+        throw new Error('Currently only CSV files are supported. PDF support coming soon!');
+      }
+
+      setParsedData(data);
+      
+      // Stage 2: Extract meet information
+      setProgress({ 
+        stage: 'Analyzing meet data...', 
+        current: 15, 
+        total: 100, 
+        message: 'Extracting meet and course information' 
+      });
+      
+      const meetData = extractMeetInfo(data, file.name);
+      setMeetInfo(meetData);
+
+      // Stage 3: Check if course exists
+      setProgress({ 
+        stage: 'Checking course...', 
+        current: 25, 
+        total: 100, 
+        message: 'Looking for existing course in database' 
+      });
+      
+      const { matchingCourses: matches, exactMatch } = await checkCourseExists(meetData);
+      
+      if (matches.length > 0) {
+        // Store the choices and show custom selection UI
+        setMatchingCourses(matches);
+        setShowCourseSelectionModal(true);
+        setIsImporting(false);
+        return;
+      } else {
+        // No matches - would need to create new course, but modal is disabled
+        console.log('No matching courses found - would need course creation modal');
+        throw new Error('Course creation modal is currently disabled. An existing "Baylands" course was expected but not found.');
+      }
 
     } catch (error: any) {
       console.error('Import error:', error);
-      setErrors(prev => [...prev, `Import failed: ${error.message}`]);
-    } finally {
-      setImporting(false);
+      setStats(prev => ({ 
+        ...prev, 
+        errors: [error.message] 
+      }));
+      setIsImporting(false);
     }
   };
 
-  const importCourses = async () => {
-    if (!files.courses) throw new Error('Courses file not found');
-    
-    const response = await readFileAsText(files.courses);
-    const lines = response.split('\n').slice(1); // Skip header
-    
-    const courses = lines
-      .filter(line => line.trim())
-      .map(line => {
-        // More robust CSV parsing to handle quoted values with commas
-        const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-        if (!matches || matches.length < 3) return null;
-        
-        const name = matches[0].replace(/"/g, '').trim();
-        const distanceInMeters = parseFloat(matches[1]);
-        const difficulty = parseFloat(matches[2]);
-        
-        // Validate data ranges
-        if (isNaN(distanceInMeters) || distanceInMeters <= 0 || distanceInMeters > 100000) {
-          console.warn(`Invalid distance for course ${name}: ${distanceInMeters}`);
-          return null;
-        }
-        
-        if (isNaN(difficulty) || difficulty < 0 || difficulty > 100) {
-          console.warn(`Invalid difficulty for course ${name}: ${difficulty}`);
-          return null;
-        }
-        
-        return {
-          name: name.substring(0, 255), // Ensure name doesn't exceed VARCHAR limit
-          distance_meters: Math.round(distanceInMeters),
-          difficulty_rating: Math.round(difficulty * 100000) / 100000, // Round to 5 decimal places
-          rating_confidence: 'estimated' as const
-        };
-      })
-      .filter(Boolean);
-
-    if (courses.length === 0) {
-      throw new Error('No valid courses found in CSV file');
-    }
-
-    // Insert courses in smaller batches to avoid timeout
-    const batchSize = 50;
-    let totalInserted = 0;
-    
-    for (let i = 0; i < courses.length; i += batchSize) {
-      const batch = courses.slice(i, i + batchSize);
-      const { error } = await supabase
-        .from('courses')
-        .insert(batch);
+  // Continue import after course is determined
+  const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData: any) => {
+    try {
+      setIsImporting(true);
       
-      if (error) {
-        console.error('Course batch error:', error);
-        throw new Error(`Error inserting courses batch ${i}: ${error.message}`);
-      }
-      totalInserted += batch.length;
-    }
-
-    setStats(prev => ({ ...prev, courses: totalInserted }));
-  };
-
-  const importAthletesAndSchools = async () => {
-    if (!files.athletes) throw new Error('Athletes file not found');
-    
-    const response = await readFileAsText(files.athletes);
-    const lines = response.split('\n').slice(1); // Skip header
-    
-    const athletes: any[] = [];
-    const schoolsSet = new Set<string>();
-
-    lines
-      .filter(line => line.trim())
-      .forEach(line => {
-        // More robust CSV parsing
-        const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-        if (!matches || matches.length < 6) return;
-
-        const firstName = matches[2].replace(/"/g, '').trim();
-        const lastName = matches[3].replace(/"/g, '').trim();
-        const gradYear = parseInt(matches[4]);
-        const division = matches[5].replace(/"/g, '').trim();
-        
-        // Validate data
-        if (!firstName || !lastName || isNaN(gradYear) || gradYear < 1950 || gradYear > 2050) {
-          console.warn(`Invalid athlete data: ${firstName} ${lastName}, grad year: ${gradYear}`);
-          return;
-        }
-        
-        if (!['Boys', 'Girls'].includes(division)) {
-          console.warn(`Invalid division for ${firstName} ${lastName}: ${division}`);
-          return;
-        }
-        
-        const schoolName = `Westmont High School`;
-        schoolsSet.add(schoolName);
-
-        athletes.push({
-          first_name: firstName.substring(0, 100), // Ensure within VARCHAR limit
-          last_name: lastName.substring(0, 100),
-          graduation_year: gradYear,
-          gender: division === 'Boys' ? 'M' : 'F'
-        });
+      // Stage 4: Create meet
+      setProgress({ 
+        stage: 'Creating meet...', 
+        current: 35, 
+        total: 100, 
+        message: 'Setting up meet record in database' 
       });
-
-    if (athletes.length === 0) {
-      throw new Error('No valid athletes found in CSV file');
-    }
-
-    // First insert schools
-    const schools = Array.from(schoolsSet).map(name => ({ name: name.substring(0, 255) }));
-    const { data: schoolData, error: schoolError } = await supabase
-      .from('schools')
-      .insert(schools)
-      .select();
-
-    if (schoolError) throw schoolError;
-    setStats(prev => ({ ...prev, schools: schools.length }));
-
-    // Then insert athletes in batches
-    const batchSize = 100;
-    let totalInserted = 0;
-    
-    for (let i = 0; i < athletes.length; i += batchSize) {
-      const batch = athletes.slice(i, i + batchSize);
-      const { error: athleteError } = await supabase
-        .from('athletes')
-        .insert(batch);
       
-      if (athleteError) {
-        console.error('Athlete batch error:', athleteError);
-        throw new Error(`Error inserting athletes batch ${i}: ${athleteError.message}`);
-      }
-      totalInserted += batch.length;
-    }
+      const meetData = {
+        name: meetInfo.name,
+        meet_date: meetInfo.date, // Changed back to meet_date - this is likely what your table expects
+        course_id: courseData.id,
+        meet_type: 'Regular'
+      };
 
-    setStats(prev => ({ ...prev, athletes: totalInserted }));
-  };
+      const meet = await meetCRUD.create(meetData);
 
-  const importResults = async () => {
-    if (!files.results) throw new Error('Results file not found');
-    
-    const response = await readFileAsText(files.results);
-    const lines = response.split('\n').slice(1); // Skip header
-    
-    // Get existing courses and athletes for matching
-    const { data: courses } = await supabase.from('courses').select('*');
-    const { data: athletes } = await supabase.from('athletes').select('*');
-    
-    const courseMap = new Map();
-    courses?.forEach(course => {
-      // Try multiple matching strategies
-      const baseName = course.name.split('|')[0].trim();
-      courseMap.set(course.name, course.id);
-      courseMap.set(baseName, course.id);
-    });
+      // Stage 5: Get existing data
+      setProgress({ 
+        stage: 'Loading existing data...', 
+        current: 45, 
+        total: 100, 
+        message: 'Fetching schools and athletes from database' 
+      });
+      
+      const [allExistingSchools, existingAthletes] = await Promise.all([
+        schoolCRUD.getAll(),
+        athleteCRUD.getAll()
+      ]);
 
-    const athleteMap = new Map();
-    athletes?.forEach(athlete => {
-      const key = `${athlete.first_name} ${athlete.last_name}`;
-      athleteMap.set(key, athlete);
-    });
-
-    const meets = new Map();
-    const results: any[] = [];
-    let processedLines = 0;
-
-    lines
-      .filter(line => line.trim())
-      .forEach(line => {
-        processedLines++;
+      // Stage 6: Process schools
+      setProgress({ 
+        stage: 'Processing schools...', 
+        current: 55, 
+        total: 100, 
+        message: 'Creating missing schools' 
+      });
+      
+      const schoolMap = new Map();
+      const uniqueSchools = [...new Set(data.map(row => row.School.trim()))];
+      
+      for (const schoolName of uniqueSchools) {
+        let school = allExistingSchools.find(s => 
+          s.name.toLowerCase() === schoolName.toLowerCase()
+        );
         
-        // More robust CSV parsing for quoted fields
-        const matches = line.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-        if (!matches || matches.length < 8) return;
-
-        const date = parseDate(matches[0].replace(/"/g, '').trim());
-        const athleteString = matches[1].replace(/"/g, '').trim();
-        const duration = matches[3].replace(/"/g, '').trim();
-        const event = matches[4].replace(/"/g, '').trim();
-        const courseString = matches[5].replace(/"/g, '').trim();
-        const season = parseInt(matches[7]);
-
-        // Validate season year
-        if (isNaN(season) || season < 1950 || season > 2030) {
-          console.warn(`Invalid season year: ${season} for line ${processedLines}`);
-          return;
-        }
-
-        // Extract athlete info
-        const athleteInfo = extractAthleteInfo(athleteString);
-        if (!athleteInfo) return;
-
-        const athleteKey = `${athleteInfo.firstName} ${athleteInfo.lastName}`;
-        const athlete = athleteMap.get(athleteKey);
-        if (!athlete) {
-          // Skip silently - athlete might not be in our dataset
-          return;
-        }
-
-        // Find matching course with improved matching
-        let courseId = null;
-        const courseSearchTerms = [
-          courseString,
-          courseString.split('|')[0].trim(),
-          courseString.split(',')[0].trim()
-        ];
-        
-        for (const searchTerm of courseSearchTerms) {
-          for (const [courseName, id] of courseMap) {
-            if (courseName.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                searchTerm.toLowerCase().includes(courseName.toLowerCase())) {
-              courseId = id;
-              break;
-            }
+        if (!school) {
+          // Create school directly using Supabase since schoolCRUD.create doesn't exist
+          const { data: newSchool, error } = await supabase
+            .from('schools')
+            .insert({ name: schoolName })
+            .select()
+            .single();
+          
+          if (error) {
+            console.error('Error creating school:', error);
+            // Use placeholder for now but log the error
+            school = { id: 'placeholder', name: schoolName };
+          } else {
+            school = newSchool;
+            setStats(prev => ({ 
+              ...prev, 
+              schoolsCreated: prev.schoolsCreated + 1 
+            }));
           }
-          if (courseId) break;
         }
-        
-        if (!courseId) {
-          // Skip silently - course might not be in our dataset
-          return;
-        }
+        schoolMap.set(schoolName, school);
+      }
 
-        // Create meet if not exists
-        const meetKey = `${event.substring(0, 50)}-${date}-${courseId}-${athlete.gender}`;
-        if (!meets.has(meetKey)) {
-          meets.set(meetKey, {
-            name: event.substring(0, 255), // Ensure within VARCHAR limit
-            meet_date: date,
-            course_id: courseId,
-            gender: athlete.gender
-          });
-        }
-
-        const timeSeconds = parseTime(duration);
-
-        // Validate time (should be reasonable for cross country)
-        if (timeSeconds > 0 && timeSeconds < 7200) { // Between 0 and 2 hours
-          results.push({
-            athlete_id: athlete.id,
-            meet_id: null, // Will be set after meet insertion
-            meet_key: meetKey, // Temporary reference
-            time_seconds: timeSeconds,
-            place_overall: 1, // Default, will be updated later
-            season_year: season // Keep original for reference, calculated_season will auto-populate
-          });
-        }
+      // Stage 7: Process athletes
+      setProgress({ 
+        stage: 'Processing athletes...', 
+        current: 65, 
+        total: 100, 
+        message: 'Creating missing athletes' 
       });
-
-    console.log(`Processed ${processedLines} lines, found ${results.length} valid results`);
-
-    // Insert meets first
-    const meetsArray = Array.from(meets.values());
-    const meetIdMap = new Map(); // Map meetKey to actual meet ID
-    
-    if (meetsArray.length > 0) {
-      const batchSize = 50;
-      for (let i = 0; i < meetsArray.length; i += batchSize) {
-        const batch = meetsArray.slice(i, i + batchSize);
-        const { data: insertedMeets, error: meetError } = await supabase
-          .from('meets')
-          .insert(batch)
-          .select('id, name, meet_date, course_id, gender');
+      
+      const athleteMap = new Map();
+      
+      for (const row of data) {
+        const { firstName, lastName } = normalizeAthleteName(row.Athlete);
+        const school = schoolMap.get(row.School.trim());
+        const athleteKey = `${firstName}_${lastName}_${school.id}`;
         
-        if (meetError) {
-          console.error('Meet batch error:', meetError);
-          throw new Error(`Error inserting meets batch ${i}: ${meetError.message}`);
-        }
-        
-        // Map the meetKey to actual meet ID for results
-        if (insertedMeets) {
-          insertedMeets.forEach((meet, index) => {
-            const originalIndex = i + index;
-            const meetKey = Array.from(meets.keys())[originalIndex];
-            meetIdMap.set(meetKey, meet.id);
+        // Check if athlete already exists
+        let athlete = existingAthletes.find(a => 
+          a.first_name.toLowerCase() === firstName.toLowerCase() &&
+          a.last_name.toLowerCase() === lastName.toLowerCase() &&
+          a.current_school_id === school.id
+        );
+
+        if (!athlete) {
+          const graduationYear = calculateGraduationYear(
+            row.Grade || 12, 
+            new Date(meetInfo.date).getFullYear()
+          );
+          
+          athlete = await athleteCRUD.create({
+            first_name: firstName,
+            last_name: lastName,
+            graduation_year: graduationYear,
+            gender: (row.Gender === 'M' || row.Gender === 'F') ? row.Gender : undefined,
+            current_school_id: school.id
           });
-        }
-      }
-      setStats(prev => ({ ...prev, meets: meetsArray.length }));
-    }
-
-    // Then insert results with proper meet IDs
-    if (results.length > 0) {
-      // Update results with actual meet IDs
-      const updatedResults = results.map(result => ({
-        athlete_id: result.athlete_id,
-        meet_id: meetIdMap.get(result.meet_key),
-        time_seconds: result.time_seconds,
-        place_overall: result.place_overall,
-        season_year: result.season_year
-      })).filter(result => result.meet_id); // Only include results with valid meet IDs
-      
-      const batchSize = 50; // Smaller batches for results
-      let totalInserted = 0;
-      
-      for (let i = 0; i < updatedResults.length; i += batchSize) {
-        const batch = updatedResults.slice(i, i + batchSize);
-        const { error } = await supabase
-          .from('results')
-          .insert(batch);
-        if (error) {
-          console.error('Results batch error:', error);
-          setErrors(prev => [...prev, `Error inserting results batch ${i}: ${error.message}`]);
-        } else {
-          totalInserted += batch.length;
+          
+          setStats(prev => ({ 
+            ...prev, 
+            athletesCreated: prev.athletesCreated + 1 
+          }));
         }
         
-        // Update progress
-        if (i % 200 === 0) {
-          setProgress(`Importing results... ${i + batch.length}/${updatedResults.length}`);
-        }
+        athleteMap.set(athleteKey, athlete);
       }
+
+      // Stage 8: Import results
+      setProgress({ 
+        stage: 'Importing results...', 
+        current: 75, 
+        total: 100, 
+        message: 'Creating race results' 
+      });
       
-      setStats(prev => ({ ...prev, results: totalInserted }));
+      for (let i = 0; i < data.length; i++) {
+        const row = data[i];
+        const { firstName, lastName } = normalizeAthleteName(row.Athlete);
+        const school = schoolMap.get(row.School.trim());
+        const athleteKey = `${firstName}_${lastName}_${school.id}`;
+        const athlete = athleteMap.get(athleteKey);
+        
+        if (athlete) {
+          const timeInSeconds = timeToSeconds(row.Duration);
+          
+          if (timeInSeconds > 0) {
+            const resultData = {
+              athlete_id: athlete.id,
+              meet_id: meet.id,
+              time_seconds: Math.round(timeInSeconds * 100), // Store as centiseconds (e.g., 783.60 → 78360)
+              place_overall: row.Place || 0,
+              season_year: new Date(meetInfo.date).getFullYear()
+            };
+            
+            console.log(`Creating result for ${row.Athlete}:`, resultData);
+            
+            const { data: result, error: resultError } = await supabase
+              .from('results')
+              .insert(resultData);
+              
+            if (resultError) {
+              console.error('Result creation error:', resultError);
+              setStats(prev => ({ 
+                ...prev, 
+                errors: [...prev.errors, `Failed to create result for ${row.Athlete}: ${resultError.message}`] 
+              }));
+              continue; // Skip this result and continue with next
+            }
+            
+            setStats(prev => ({ 
+              ...prev, 
+              resultsImported: prev.resultsImported + 1 
+            }));
+          } else {
+            setStats(prev => ({ 
+              ...prev, 
+              errors: [...prev.errors, `Invalid time format for ${row.Athlete}: ${row.Duration}`] 
+            }));
+          }
+        }
+
+        // Update progress
+        const progressPercent = 75 + ((i + 1) / data.length) * 20;
+        setProgress({ 
+          stage: 'Importing results...', 
+          current: progressPercent, 
+          total: 100, 
+          message: `Imported ${i + 1} of ${data.length} results` 
+        });
+      }
+
+      setProgress({ 
+        stage: 'Complete!', 
+        current: 100, 
+        total: 100, 
+        message: 'Import completed successfully' 
+      });
+      setImportComplete(true);
+
+    } catch (error: any) {
+      console.error('Import continuation error:', error);
+      setStats(prev => ({ 
+        ...prev, 
+        errors: [...prev.errors, error.message] 
+      }));
+    } finally {
+      setIsImporting(false);
     }
   };
 
-  const allFilesUploaded = files.athletes && files.courses && files.results;
+  // Handle course selection from modal
+  const handleCourseSelection = async (course: any) => {
+    setShowCourseSelectionModal(false);
+    
+    if (course) {
+      // User selected existing course
+      console.log('Using existing course:', course);
+      if (parsedData.length > 0 && meetInfo) {
+        await continueImport(parsedData, meetInfo, course);
+      }
+    } else {
+      // User wants to create new course
+      if (meetInfo && parsedData.length > 0) {
+        console.log('Creating new course:', meetInfo.courseName);
+        
+        // Ask for difficulty rating
+        const difficultyInput = prompt(
+          `Creating new course: "${meetInfo.courseName}" - ${meetInfo.distance}\n\n` +
+          `Please enter difficulty rating (0-100):\n` +
+          `Consider: hills, terrain, weather, altitude\n` +
+          `Typical range: 30-70`,
+          '50'
+        );
+        
+        const difficulty = parseFloat(difficultyInput || '50');
+        if (isNaN(difficulty) || difficulty < 0 || difficulty > 100) {
+          alert('Invalid difficulty rating. Using default value of 50.');
+        }
+        
+        const finalDifficulty = (isNaN(difficulty) || difficulty < 0 || difficulty > 100) ? 50 : difficulty;
+        
+        const courseData = {
+          name: meetInfo.courseName,
+          distance_meters: meetInfo.distanceMeters,
+          difficulty_rating: finalDifficulty,
+          rating: (finalDifficulty * 4747) / meetInfo.distanceMeters
+        };
+        
+        console.log('Course data being sent:', courseData);
+        
+        const { data: newCourse, error: courseError } = await supabase
+          .from('courses')
+          .insert(courseData)
+          .select()
+          .single();
+
+        if (courseError) {
+          console.error('Course creation error details:', courseError);
+          setStats(prev => ({ 
+            ...prev, 
+            errors: [...prev.errors, `Failed to create course: ${courseError.message}`] 
+          }));
+          setIsImporting(false);
+          return;
+        }
+
+        console.log('New course created:', newCourse);
+        setStats(prev => ({ ...prev, coursesCreated: 1 }));
+        
+        console.log('Starting continueImport with new course...');
+        await continueImport(parsedData, meetInfo, newCourse);
+      }
+    }
+  };
+
+  // Handle course creation completion
+  const handleCourseCreated = async (courseData: any) => {
+    setShowCourseModal(false);
+    if (courseData && parsedData.length > 0 && meetInfo) {
+      setStats(prev => ({ ...prev, coursesCreated: 1 }));
+      await continueImport(parsedData, meetInfo, courseData);
+    }
+  };
+
+  // Reset import state
+  const resetImport = () => {
+    setFile(null);
+    setParsedData([]);
+    setMeetInfo(null);
+    setExistingCourse(null);
+    setImportComplete(false);
+    setDataPreview([]);
+    setShowCourseSelectionModal(false);
+    setMatchingCourses([]);
+    setStats({ coursesCreated: 0, schoolsCreated: 0, athletesCreated: 0, resultsImported: 0, errors: [] });
+    setProgress({ stage: '', current: 0, total: 0, message: '' });
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="bg-white rounded-lg shadow-lg p-8">
-        <div className="text-center mb-8">
-          <Database className="w-16 h-16 text-red-600 mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Data Import System</h1>
-          <p className="text-gray-600">Upload and import your Athletes, Courses, and Results CSV files</p>
-        </div>
+    <div className="space-y-6">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Database className="h-5 w-5" />
+            Enhanced Data Importer - Phase 2
+          </CardTitle>
+          <CardDescription>
+            Import meet results from CSV files with intelligent course detection and automatic data creation. PDF support coming soon.
+          </CardDescription>
+        </CardHeader>
+        
+        <CardContent>
+          {!importComplete ? (
+            <Tabs defaultValue="upload" className="w-full">
+              <TabsList className="grid w-full grid-cols-2">
+                <TabsTrigger value="upload" className="flex items-center gap-2">
+                  <Upload className="h-4 w-4" />
+                  Upload & Import
+                </TabsTrigger>
+                <TabsTrigger value="preview" disabled={!file} className="flex items-center gap-2">
+                  <Eye className="h-4 w-4" />
+                  Preview Data
+                </TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="upload" className="space-y-4">
+                {/* File Upload */}
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-gray-400 transition-colors">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => {
+                      const selectedFile = e.target.files?.[0];
+                      if (selectedFile) handleFileSelect(selectedFile);
+                    }}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <FileText className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                    <p className="text-xl font-medium text-gray-900 mb-2">
+                      {file ? file.name : 'Choose CSV file to import'}
+                    </p>
+                    <p className="text-sm text-gray-500 mb-2">
+                      Currently supports CSV files only
+                    </p>
+                    <p className="text-xs text-gray-400">
+                      PDF support coming in future updates
+                    </p>
+                    {file && (
+                      <Badge variant="secondary" className="mt-2">
+                        {formatFileSize(file.size)}
+                      </Badge>
+                    )}
+                  </label>
+                </div>
 
-        {/* File Upload Section */}
-        <div className="mb-8 space-y-4">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Step 1: Upload CSV Files</h2>
-          
-          {/* Courses File */}
-          <div className="border border-gray-200 rounded-lg p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Courses CSV (414 courses with difficulty ratings)
-            </label>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => e.target.files?.[0] && handleFileUpload('courses', e.target.files[0])}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
-            />
-            {files.courses && (
-              <div className="mt-2 flex items-center text-green-600">
-                <CheckCircle className="w-4 h-4 mr-2" />
-                <span className="text-sm">{files.courses.name} uploaded</span>
+                {/* Meet Info Preview */}
+                {meetInfo && (
+                  <Card className="bg-blue-50">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg">Detected Meet Information</CardTitle>
+                    </CardHeader>
+                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2">
+                        <TrendingUp className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Meet:</span>
+                        <span>{meetInfo.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Clock className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Date:</span>
+                        <span>{meetInfo.date}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Distance:</span>
+                        <span>{meetInfo.distance} ({meetInfo.distanceMiles} miles)</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Database className="h-4 w-4 text-blue-600" />
+                        <span className="font-medium">Course:</span>
+                        <span>{meetInfo.courseName}</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Import Button */}
+                <Button 
+                  onClick={handleImport} 
+                  disabled={!file || isImporting}
+                  className="w-full"
+                  size="lg"
+                >
+                  {isImporting ? (
+                    <>
+                      <Clock className="mr-2 h-4 w-4 animate-spin" />
+                      Importing...
+                    </>
+                  ) : (
+                    <>
+                      <Upload className="mr-2 h-4 w-4" />
+                      Start Import Process
+                    </>
+                  )}
+                </Button>
+
+                {/* Progress */}
+                {isImporting && (
+                  <Card>
+                    <CardContent className="pt-6">
+                      <div className="space-y-3">
+                        <div className="flex justify-between text-sm font-medium">
+                          <span>{progress.stage}</span>
+                          <span>{Math.round(progress.current)}%</span>
+                        </div>
+                        <Progress value={progress.current} className="w-full h-2" />
+                        <p className="text-sm text-gray-600">{progress.message}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+
+              <TabsContent value="preview" className="space-y-4">
+                {dataPreview.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg">Data Preview</CardTitle>
+                      <CardDescription>
+                        First 5 rows from your CSV file
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="overflow-x-auto">
+                        <table className="min-w-full divide-y divide-gray-200">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Place</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Athlete</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">School</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Grade</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Race</th>
+                            </tr>
+                          </thead>
+                          <tbody className="bg-white divide-y divide-gray-200">
+                            {dataPreview.map((row, index) => (
+                              <tr key={index} className="hover:bg-gray-50">
+                                <td className="px-3 py-2 text-sm text-gray-900">{row.Place}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900">{row.Athlete}</td>
+                                <td className="px-3 py-2 text-sm font-mono text-gray-900">{row.Duration}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900">{row.School}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900">{row.Grade}</td>
+                                <td className="px-3 py-2 text-sm text-gray-900">{row.Race}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <>
+              {/* Success State */}
+              <Alert className="border-green-200 bg-green-50">
+                <CheckCircle className="h-4 w-4 text-green-600" />
+                <AlertDescription className="font-medium text-green-800">
+                  Import completed successfully! Your data has been added to the database.
+                </AlertDescription>
+              </Alert>
+
+              {/* Import Stats */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <Card className="bg-blue-50">
+                  <CardContent className="text-center py-6">
+                    <div className="text-3xl font-bold text-blue-600 mb-2">{stats.coursesCreated}</div>
+                    <div className="text-sm font-medium text-blue-800">Courses Created</div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-green-50">
+                  <CardContent className="text-center py-6">
+                    <div className="text-3xl font-bold text-green-600 mb-2">{stats.schoolsCreated}</div>
+                    <div className="text-sm font-medium text-green-800">Schools Created</div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-purple-50">
+                  <CardContent className="text-center py-6">
+                    <div className="text-3xl font-bold text-purple-600 mb-2">{stats.athletesCreated}</div>
+                    <div className="text-sm font-medium text-purple-800">Athletes Created</div>
+                  </CardContent>
+                </Card>
+                <Card className="bg-orange-50">
+                  <CardContent className="text-center py-6">
+                    <div className="text-3xl font-bold text-orange-600 mb-2">{stats.resultsImported}</div>
+                    <div className="text-sm font-medium text-orange-800">Results Imported</div>
+                  </CardContent>
+                </Card>
               </div>
-            )}
-          </div>
 
-          {/* Athletes File */}
-          <div className="border border-gray-200 rounded-lg p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Athletes CSV (1,039 athletes)
-            </label>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => e.target.files?.[0] && handleFileUpload('athletes', e.target.files[0])}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
-            />
-            {files.athletes && (
-              <div className="mt-2 flex items-center text-green-600">
-                <CheckCircle className="w-4 h-4 mr-2" />
-                <span className="text-sm">{files.athletes.name} uploaded</span>
-              </div>
-            )}
-          </div>
-
-          {/* Results File */}
-          <div className="border border-gray-200 rounded-lg p-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Results CSV (6,711 race results)
-            </label>
-            <input
-              type="file"
-              accept=".csv"
-              onChange={(e) => e.target.files?.[0] && handleFileUpload('results', e.target.files[0])}
-              className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-red-50 file:text-red-700 hover:file:bg-red-100"
-            />
-            {files.results && (
-              <div className="mt-2 flex items-center text-green-600">
-                <CheckCircle className="w-4 h-4 mr-2" />
-                <span className="text-sm">{files.results.name} uploaded</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Import Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-          <div className="text-center p-4 bg-white border border-gray-200 rounded-lg shadow">
-            <Users className="w-8 h-8 text-red-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-black">{stats.schools}</div>
-            <div className="text-sm text-gray-600">Schools</div>
-          </div>
-          <div className="text-center p-4 bg-red-50 border border-red-200 rounded-lg shadow">
-            <Users className="w-8 h-8 text-red-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-red-600">{stats.athletes}</div>
-            <div className="text-sm text-gray-600">Athletes</div>
-          </div>
-          <div className="text-center p-4 bg-gray-900 rounded-lg shadow">
-            <MapPin className="w-8 h-8 text-white mx-auto mb-2" />
-            <div className="text-2xl font-bold text-white">{stats.courses}</div>
-            <div className="text-sm text-gray-300">Courses</div>
-          </div>
-          <div className="text-center p-4 bg-white border border-gray-200 rounded-lg shadow">
-            <Trophy className="w-8 h-8 text-red-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-black">{stats.meets}</div>
-            <div className="text-sm text-gray-600">Meets</div>
-          </div>
-          <div className="text-center p-4 bg-white border border-gray-200 rounded-lg shadow">
-            <Trophy className="w-8 h-8 text-red-600 mx-auto mb-2" />
-            <div className="text-2xl font-bold text-black">{stats.results}</div>
-            <div className="text-sm text-gray-600">Results</div>
-          </div>
-        </div>
-
-        {/* Progress */}
-        {progress && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <div className="flex items-center">
-              {importing ? (
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600 mr-3" />
-              ) : completed ? (
-                <CheckCircle className="w-4 h-4 text-green-600 mr-3" />
-              ) : (
-                <AlertCircle className="w-4 h-4 text-red-600 mr-3" />
+              {/* Meet Summary */}
+              {meetInfo && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Import Summary</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <span className="font-medium text-gray-700">Meet Name:</span>
+                        <span className="ml-2">{meetInfo.name}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Date:</span>
+                        <span className="ml-2">{meetInfo.date}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Distance:</span>
+                        <span className="ml-2">{meetInfo.distance}</span>
+                      </div>
+                      <div>
+                        <span className="font-medium text-gray-700">Total Results:</span>
+                        <span className="ml-2">{stats.resultsImported}</span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               )}
-              <span className="text-red-800">{progress}</span>
-            </div>
-          </div>
-        )}
 
-        {/* Errors */}
-        {errors.length > 0 && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-            <h3 className="font-semibold text-red-800 mb-2">Import Errors:</h3>
-            <ul className="text-red-700 text-sm space-y-1">
-              {errors.map((error, index) => (
-                <li key={index}>• {error}</li>
-              ))}
-            </ul>
-          </div>
-        )}
+              {/* Errors */}
+              {stats.errors.length > 0 && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    <div className="font-medium mb-2">
+                      {stats.errors.length} issue(s) occurred during import:
+                    </div>
+                    <ul className="list-disc list-inside space-y-1 text-sm">
+                      {stats.errors.map((error, index) => (
+                        <li key={index}>{error}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              )}
 
-        {/* Import Button */}
-        <div className="text-center">
-          <button
-            onClick={startImport}
-            disabled={importing || !allFilesUploaded}
-            className={`inline-flex items-center px-6 py-3 rounded-lg font-semibold text-white ${
-              importing || !allFilesUploaded
-                ? 'bg-gray-400 cursor-not-allowed' 
-                : completed 
-                ? 'bg-green-600 hover:bg-green-700'
-                : 'bg-red-600 hover:bg-red-700'
-            }`}
-          >
-            {importing ? (
-              <>
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2" />
-                Importing...
-              </>
-            ) : completed ? (
-              <>
-                <CheckCircle className="w-4 h-4 mr-2" />
-                Import Completed
-              </>
-            ) : !allFilesUploaded ? (
-              <>
-                <FileText className="w-4 h-4 mr-2" />
-                Upload All Files First
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4 mr-2" />
-                Start Import
-              </>
-            )}
-          </button>
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <Button onClick={resetImport} variant="outline" className="flex-1">
+                  Import Another File
+                </Button>
+                <Button 
+                  onClick={() => window.location.href = '/races'} 
+                  className="flex-1"
+                >
+                  View Imported Meet
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Simple Course Selection Modal */}
+      {showCourseSelectionModal && meetInfo && matchingCourses.length > 0 && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-md">
+            <CardHeader>
+              <CardTitle>Course Selection</CardTitle>
+              <CardDescription>
+                Found existing course that might match "{meetInfo.courseName}". Choose an option:
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Existing Course Option */}
+              <div className="p-3 border rounded-lg">
+                <div className="font-medium">Use Existing Course:</div>
+                <div className="text-sm text-gray-600">{matchingCourses[0].name}</div>
+              </div>
+
+              {/* New Course Option */}
+              <div className="p-3 border rounded-lg">
+                <div className="font-medium">Create New Course:</div>
+                <div className="text-sm text-gray-600">
+                  "{meetInfo.courseName}" - {meetInfo.distance}
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3">
+                <Button 
+                  variant="outline" 
+                  onClick={() => handleCourseSelection(matchingCourses[0])}
+                  className="flex-1"
+                >
+                  Use Existing
+                </Button>
+                <Button 
+                  onClick={() => handleCourseSelection(null)}
+                  className="flex-1"
+                >
+                  New Course
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
-
-        {/* Instructions */}
-        <div className="mt-8 p-4 bg-gray-50 rounded-lg">
-          <h3 className="font-semibold text-gray-800 mb-2">Import Process:</h3>
-          <ol className="text-gray-600 text-sm space-y-1">
-            <li>1. <strong>Upload Files:</strong> Select your Athletes.csv, courses.csv, and Results.csv files</li>
-            <li>2. <strong>Courses:</strong> Imports 414 courses with difficulty ratings</li>
-            <li>3. <strong>Athletes & Schools:</strong> Imports 1,039 athletes and creates school records</li>
-            <li>4. <strong>Results & Meets:</strong> Imports 6,711 results and creates meets automatically</li>
-            <li>5. <strong>Data Linking:</strong> Matches athletes and courses by name</li>
-          </ol>
-        </div>
-      </div>
+      )}
     </div>
   );
-};
-
-export default DataImporter;
+}

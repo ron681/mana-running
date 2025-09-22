@@ -153,7 +153,7 @@ export const meetCRUD = {
       .insert(meetData)
       .select(`
         *,
-        course:courses(name, location)
+        course:courses(name)
       `)
       .single();
     
@@ -175,7 +175,7 @@ export const meetCRUD = {
       .eq('id', id)
       .select(`
         *,
-        course:courses(name, location)
+        course:courses(name)
       `)
       .single();
     
@@ -244,33 +244,37 @@ export const courseCRUD = {
       .single();
     
     if (error) throw error;
-    return data;
-  },
+  return data;
+},
 
-  // POST: Create new course
-  async create(courseData: {
-    name: string;
-    distance: string;
-    surface_type: string;
-    location: string;
-    difficulty_rating?: number;
-  }) {
-    const { data, error } = await supabase
-      .from('courses')
-      .insert(courseData)
-      .select()
-      .single();
+// POST: Create new course
+async create(meetData: { 
+  name: string; 
+  date: string;  // This should map to meet_date in the database
+  course_id: string; 
+  meet_type: string 
+}) {
+  const { data, error } = await supabase
+    .from('meets')
+    .insert({
+      name: meetData.name,
+      meet_date: meetData.date,  // Map date parameter to meet_date column
+      course_id: meetData.course_id,
+      meet_type: meetData.meet_type
+    })
+    .select()
+    .single();
     
-    if (error) throw error;
-    return data;
-  },
+  if (error) throw error;
+  return data;
+},
+
 
   // PUT: Update course
   async update(id: string, updates: Partial<{
     name: string;
     distance: string;
     surface_type: string;
-    location: string;
     difficulty_rating: number;
   }>) {
     const { data, error } = await supabase
