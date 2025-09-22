@@ -272,7 +272,7 @@ export default function EnhancedDataImporter() {
       
 const meetData = {
   name: meetInfo.name,
-  meet_date: meetInfo.date,  // Changed back to meet_date
+  date: meetInfo.date,  // Changed back to meet_date
   course_id: courseData.id,
   meet_type: 'Regular'
 };
