@@ -30,8 +30,8 @@ interface Race {
     courses: {
       name: string
       distance_miles: number
-    }
-  }
+    }[]
+  }[]
 }
 
 export default async function RaceResultsPage({
@@ -97,18 +97,19 @@ const raceResults: RaceResult[] = results?.map((result) => {
   // Safe array access helpers
   const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes;
   const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null;
+  const meet = Array.isArray(race.meets) ? race.meets[0] : race.meets;
   
   return {
     id: result.id,
     place: result.place_overall,
     athlete_id: athlete?.id,
     athlete_name: `${athlete?.first_name} ${athlete?.last_name}`,
-    athlete_grade: getGradeDisplay(athlete?.graduation_year, race.meets.meet_date),
+    athlete_grade: getGradeDisplay(athlete?.graduation_year, meet?.meet_date),
     team_name: school?.name || 'Unknown School',
     time_seconds: result.time_seconds
   }
 }) || []
-  
+
   // Separate timed and non-timed results
   const timedResults = raceResults.filter(r => r.time_seconds !== null)
   const untimedResults = raceResults.filter(r => r.time_seconds === null)
