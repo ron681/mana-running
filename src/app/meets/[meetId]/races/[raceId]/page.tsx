@@ -92,16 +92,22 @@ export default async function RaceResultsPage({
     return <div>Error loading results</div>
   }
 
-  // Transform results to match expected format
-  const raceResults: RaceResult[] = results?.map((result) => ({
+// Transform results to match expected format
+const raceResults: RaceResult[] = results?.map((result) => {
+  // Safe array access helpers
+  const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes;
+  const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null;
+  
+  return {
     id: result.id,
     place: result.place_overall,
-    athlete_id: result.athletes.id,
-    athlete_name: `${result.athletes.first_name} ${result.athletes.last_name}`,
-    athlete_grade: getGradeDisplay(result.athletes.graduation_year, race.meets.meet_date),
-    team_name: result.athletes.schools.name,
+    athlete_id: athlete?.id,
+    athlete_name: `${athlete?.first_name} ${athlete?.last_name}`,
+    athlete_grade: getGradeDisplay(athlete?.graduation_year, race.meets.meet_date),
+    team_name: school?.name || 'Unknown School',
     time_seconds: result.time_seconds
-  })) || []
+  }
+}) || []
   
   // Separate timed and non-timed results
   const timedResults = raceResults.filter(r => r.time_seconds !== null)
