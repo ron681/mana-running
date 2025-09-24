@@ -4,12 +4,13 @@ import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
+import { getGradeDisplay } from '@/lib/grade-utils'
 
 interface CombinedResult {
   id: string
   place: number
   athlete_name: string
-  athlete_grade: number | null
+  athlete_grade: string | null
   team_name: string
   time_seconds: number
   race_name: string
@@ -66,7 +67,7 @@ export default async function CombinedResultsPage({
         first_name,
         last_name,
         graduation_year,
-        schools!inner(name)
+        schools(name)
       ),
       races!inner(
         name,
@@ -84,17 +85,17 @@ export default async function CombinedResultsPage({
   }
 
   // Process and transform results to match expected format
-  const combinedResults: CombinedResult[] = results?.map((result, index) => ({
-    id: result.id,
-    place: index + 1, // Overall place across all races
-    athlete_name: `${result.athletes.first_name} ${result.athletes.last_name}`,
-    athlete_grade: result.athletes.graduation_year ? new Date().getFullYear() - result.athletes.graduation_year + 12 : null,
-    team_name: result.athletes.schools.name,
-    time_seconds: result.time_seconds,
-    race_name: result.races.name,
-    race_category: result.races.category,
-    race_gender: result.races.gender
-  })) || []
+const combinedResults: CombinedResult[] = results?.map((result, index) => ({
+  id: result.id,
+  place: index + 1,
+  athlete_name: `${result.athletes[0].first_name} ${result.athletes[0].last_name}`,
+  athlete_grade: getGradeDisplay(result.athletes[0].graduation_year, meet.meet_date),
+  team_name: result.athletes[0].schools[0].name,
+  time_seconds: result.time_seconds,
+  race_name: result.races[0].name,
+  race_category: result.races[0].category,
+  race_gender: result.races[0].gender
+})) || [] 
 
   // Group results by gender for separate rankings
   const boyResults = combinedResults.filter(r => r.race_gender === 'M')
