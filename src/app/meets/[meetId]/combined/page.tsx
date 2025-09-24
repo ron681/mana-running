@@ -44,7 +44,7 @@ export default async function CombinedResultsPage({
       name, 
       meet_date, 
       meet_type,
-      courses!inner(
+      courses(
         name,
         distance_miles
       )
@@ -121,7 +121,7 @@ const combinedResults: CombinedResult[] = results?.map((result, index) => ({
             Combined Results - {meet.name}
           </h1>
           <p className="text-gray-600 mb-4">
-            {formatMeetDate(meet.meet_date)} • {meet.meet_type} • {meet.courses.name} ({meet.courses.distance_miles} mi)
+            {formatMeetDate(meet.meet_date)} • {meet.meet_type} • {meet.courses[0].name} ({meet.courses[0].distance_miles} mi)
           </p>
           <p className="text-lg font-medium text-gray-900">
             {combinedResults.length} total finishers across all races
