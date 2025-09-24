@@ -12,7 +12,7 @@ interface Race {
   gender: string
   total_participants: number
   fastest_time: number | null
-}
+}[]
 
 interface Meet {
   id: string
@@ -62,6 +62,8 @@ export default async function MeetDetailPage({
   if (error || !meet) {
     notFound()
   }
+  // Safe course access
+const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses
 
   // Process races to get fastest times
   const processedRaces: Race[] = meet.races.map(race => {
@@ -109,8 +111,8 @@ export default async function MeetDetailPage({
               <p className="mb-2"><strong>Type:</strong> {meet.meet_type}</p>
             </div>
             <div>
-              <p className="mb-2"><strong>Course:</strong> {meet.courses.name}</p>
-              <p className="mb-2"><strong>Distance:</strong> {meet.courses.distance_miles} miles</p>
+            <p className="mb-2"><strong>Course:</strong> {course?.name}</p>
+            <p className="mb-2"><strong>Distance:</strong> {course?.distance_miles} miles</p>
             </div>
           </div>
           
