@@ -337,9 +337,9 @@ export default function Home() {
             </p>
             
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-12">
-              <a href="/races" className="group bg-white text-slate-900 px-8 py-4 rounded-xl hover:bg-blue-50 transition-all duration-300 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1">
+              <a href="/meets" className="group bg-white text-slate-900 px-8 py-4 rounded-xl hover:bg-blue-50 transition-all duration-300 font-semibold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1">
                 <span className="flex items-center justify-center">
-                  Explore Races
+                  Explore Meets
                   <svg className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
                   </svg>
@@ -461,7 +461,7 @@ export default function Home() {
                       <div className="flex justify-between items-start">
                         <div className="flex-1">
                           <a 
-                            href={`/races/${meet.id}`}
+                            href={`/meets/${meet.id}`}
                             className="font-semibold text-slate-800 group-hover:text-blue-700 transition-colors line-clamp-2"
                           >
                             {meet.name}

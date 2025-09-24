@@ -26,7 +26,8 @@ import {
   schoolCRUD, 
   athleteCRUD,
   meetCRUD,
-  resultCRUD
+  resultCRUD,
+  raceCRUD  // Add this
 } from '@/lib/crud-operations';
 // import AddCourseModal from './AddCourseModal';
 // import CourseSelectionModal from './CourseSelectionModal';
@@ -34,7 +35,7 @@ import {
   timeToSeconds, 
   extractMeetInfo, 
   validateCSVData, 
-  normalizeAthleteName, 
+  parseAthleteName, 
   calculateGraduationYear,
   formatFileSize
 } from '@/lib/import-utilities';
@@ -57,6 +58,7 @@ interface MeetInfo {
   distanceMeters: number;
   distanceMiles: number;
   courseName: string;
+  _needsManualCourseName?: boolean;
 }
 
 interface ImportProgress {
@@ -161,32 +163,67 @@ export default function EnhancedDataImporter() {
       return { matchingCourses: [], exactMatch: null };
     }
   };
+// UPDATED: handleFileSelect function for DataImporter.tsx
+// Add this logic after extracting meetData
 
-  // Handle file selection and preview
-  const handleFileSelect = async (selectedFile: File) => {
-    setFile(selectedFile);
-    setImportComplete(false);
-    setDataPreview([]);
-    setMeetInfo(null);
-    
-    // If it's a CSV, show preview
-    if (selectedFile.type === 'text/csv' || selectedFile.name.endsWith('.csv')) {
-      try {
-        const data = await parseCSV(selectedFile);
-        setDataPreview(data.slice(0, 5)); // Show first 5 rows
+const handleFileSelect = async (selectedFile: File) => {
+  setFile(selectedFile);
+  setImportComplete(false);
+  setDataPreview([]);
+  setMeetInfo(null);
+  
+  if (selectedFile.type === 'text/csv' || selectedFile.name.endsWith('.csv')) {
+    try {
+      const data = await parseCSV(selectedFile);
+      setDataPreview(data.slice(0, 5));
+      
+      // Extract meet info using the enhanced function
+      const meetData = extractMeetInfo(data, selectedFile.name);
+      
+      // Declare userCourseName in proper scope
+      let userCourseName: string | null = null;
+      
+      // Check if manual course name input is needed
+      if (meetData._needsManualCourseName) {
+        userCourseName = prompt(
+          `Course name not found in CSV data.\n\n` +
+          `File: ${selectedFile.name}\n\n` +
+          `Please enter the course name for this meet:`,
+          ''
+        );
         
-        // Extract meet info for preview
-        const meetData = extractMeetInfo(data, selectedFile.name);
-        setMeetInfo(meetData);
-      } catch (error: any) {
-        console.error('Error previewing file:', error);
-        setStats(prev => ({ 
-          ...prev, 
-          errors: [`Preview error: ${error.message}`] 
-        }));
+        if (userCourseName && userCourseName.trim()) {
+          meetData.courseName = userCourseName.trim();
+          meetData.location = userCourseName.trim();
+          delete meetData._needsManualCourseName;
+        } else {
+  setStats(prev => ({ 
+    ...prev, 
+    errors: ['Course name is required and cannot be empty. Import cancelled.'] 
+  }));
+  return;
+}
       }
+      
+      setMeetInfo(meetData);
+      
+      console.log('Final meet info:', {
+        meetName: meetData.name,
+        courseName: meetData.courseName,
+        distance: `${Math.round(meetData.distanceMeters)}m = ${Math.round(meetData.distanceMiles * 100) / 100} miles`,
+        wasManualEntry: userCourseName ? true : false // Now in scope
+      });
+      
+    } catch (error: any) {
+      console.error('Error previewing file:', error);
+      setStats(prev => ({ 
+        ...prev, 
+        errors: [`Preview error: ${error.message}`] 
+      }));
     }
-  };
+  }
+};
+  
 
   // Main import process
   const handleImport = async () => {
@@ -222,7 +259,15 @@ export default function EnhancedDataImporter() {
         message: 'Extracting meet and course information' 
       });
       
-      const meetData = extractMeetInfo(data, file.name);
+// Use existing meetInfo instead of re-extracting
+const meetData = meetInfo || extractMeetInfo(data, file.name);
+console.log('DEBUG: meetData before course check:', {
+  courseName: meetData.courseName,
+  name: meetData.name
+});
+if (!meetInfo) {
+  setMeetInfo(meetData);
+}
       setMeetInfo(meetData);
 
       // Stage 3: Check if course exists
@@ -232,7 +277,7 @@ export default function EnhancedDataImporter() {
         total: 100, 
         message: 'Looking for existing course in database' 
       });
-      
+
       const { matchingCourses: matches, exactMatch } = await checkCourseExists(meetData);
       
       if (matches.length > 0) {
@@ -241,12 +286,52 @@ export default function EnhancedDataImporter() {
         setShowCourseSelectionModal(true);
         setIsImporting(false);
         return;
-      } else {
-        // No matches - would need to create new course, but modal is disabled
-        console.log('No matching courses found - would need course creation modal');
-        throw new Error('Course creation modal is currently disabled. An existing "Baylands" course was expected but not found.');
-      }
+} else {
+  // No matches - create new course and continue import
+  console.log('No matching courses found - will create new course');
+  
+  // Ensure we have a course name
+  const finalCourseName = meetData.courseName && meetData.courseName.trim() 
+    ? meetData.courseName.trim() 
+    : 'New Course'; // Fallback if somehow empty
+  
+  // Ask for difficulty rating with corrected defaults and range
+  const difficultyInput = prompt(
+    `Creating new course: "${finalCourseName}" - ${meetData.distance}\n\n` +
+    `Please enter difficulty rating:\n` +
+    `Typical range: 0.85 - 1.2\n` +
+    `1.0 = average difficulty`,
+    '1.0'
+  );
+  
+  const difficulty = parseFloat(difficultyInput || '1.0');
+  const finalDifficulty = (isNaN(difficulty) || difficulty < 0.5 || difficulty > 2.0) ? 1.0 : difficulty;
+  
+  const courseData = {
+    name: finalCourseName, // Ensure this is never empty
+    distance_meters: Math.round(meetData.distanceMeters),
+    difficulty_rating: finalDifficulty
+  };
+  
+  console.log('Creating course with data:', courseData);
+  
+  const { data: newCourse, error: courseError } = await supabase
+    .from('courses')
+    .insert(courseData)
+    .select()
+    .single();
 
+  if (courseError) {
+    console.error('Course creation error:', courseError);
+    throw new Error(`Failed to create course: ${courseError.message}`);
+  }
+
+  console.log('New course created:', newCourse);
+  setStats(prev => ({ ...prev, coursesCreated: 1 }));
+  
+  // Continue with import using the new course
+  await continueImport(data, meetData, newCourse);
+}
     } catch (error: any) {
       console.error('Import error:', error);
       setStats(prev => ({ 
@@ -256,272 +341,323 @@ export default function EnhancedDataImporter() {
       setIsImporting(false);
     }
   };
-
   // Continue import after course is determined
-  const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData: any) => {
-    try {
-      setIsImporting(true);
-      
-      // Stage 4: Create meet
-      setProgress({ 
-        stage: 'Creating meet...', 
-        current: 35, 
-        total: 100, 
-        message: 'Setting up meet record in database' 
-      });
-      
-const meetData = {
-  name: meetInfo.name,
-  date: meetInfo.date,  // Changed back to meet_date
-  course_id: courseData.id,
-  meet_type: 'Regular'
-};
-      const meet = await meetCRUD.create(meetData);
-
-      // Stage 5: Get existing data
-      setProgress({ 
-        stage: 'Loading existing data...', 
-        current: 45, 
-        total: 100, 
-        message: 'Fetching schools and athletes from database' 
-      });
-      
-      const [allExistingSchools, existingAthletes] = await Promise.all([
-        schoolCRUD.getAll(),
-        athleteCRUD.getAll()
-      ]);
-
-      // Stage 6: Process schools
-      setProgress({ 
-        stage: 'Processing schools...', 
-        current: 55, 
-        total: 100, 
-        message: 'Creating missing schools' 
-      });
-      
-      const schoolMap = new Map();
-      const uniqueSchools = [...new Set(data.map(row => row.School.trim()))];
-      
-      for (const schoolName of uniqueSchools) {
-        let school = allExistingSchools.find(s => 
-          s.name.toLowerCase() === schoolName.toLowerCase()
-        );
-        
-        if (!school) {
-          // Create school directly using Supabase since schoolCRUD.create doesn't exist
-          const { data: newSchool, error } = await supabase
-            .from('schools')
-            .insert({ name: schoolName })
-            .select()
-            .single();
-          
-          if (error) {
-            console.error('Error creating school:', error);
-            // Use placeholder for now but log the error
-            school = { id: 'placeholder', name: schoolName };
-          } else {
-            school = newSchool;
-            setStats(prev => ({ 
-              ...prev, 
-              schoolsCreated: prev.schoolsCreated + 1 
-            }));
-          }
-        }
-        schoolMap.set(schoolName, school);
-      }
-
-      // Stage 7: Process athletes
-      setProgress({ 
-        stage: 'Processing athletes...', 
-        current: 65, 
-        total: 100, 
-        message: 'Creating missing athletes' 
-      });
-      
-      const athleteMap = new Map();
-      
-      for (const row of data) {
-        const { firstName, lastName } = normalizeAthleteName(row.Athlete);
-        const school = schoolMap.get(row.School.trim());
-        const athleteKey = `${firstName}_${lastName}_${school.id}`;
-        
-        // Check if athlete already exists
-        let athlete = existingAthletes.find(a => 
-          a.first_name.toLowerCase() === firstName.toLowerCase() &&
-          a.last_name.toLowerCase() === lastName.toLowerCase() &&
-          a.current_school_id === school.id
-        );
-
-        if (!athlete) {
-          const graduationYear = calculateGraduationYear(
-            row.Grade || 12, 
-            new Date(meetInfo.date).getFullYear()
-          );
-          
- athlete = await athleteCRUD.create({
-    first_name: firstName,
-    last_name: lastName,
-    graduation_year: graduationYear,
-    gender: row.Gender === 'Boys' ? 'M' : row.Gender === 'Girls' ? 'F' : undefined,
-    current_school_id: school.id
-  });
-          
-          setStats(prev => ({ 
-            ...prev, 
-            athletesCreated: prev.athletesCreated + 1 
-          }));
-        }
-        
-        athleteMap.set(athleteKey, athlete);
-      }
-
-      // Stage 8: Import results
-      setProgress({ 
-        stage: 'Importing results...', 
-        current: 75, 
-        total: 100, 
-        message: 'Creating race results' 
-      });
-      
-      for (let i = 0; i < data.length; i++) {
-        const row = data[i];
-        const { firstName, lastName } = normalizeAthleteName(row.Athlete);
-        const school = schoolMap.get(row.School.trim());
-        const athleteKey = `${firstName}_${lastName}_${school.id}`;
-        const athlete = athleteMap.get(athleteKey);
-        
-        if (athlete) {
-          const timeInSeconds = timeToSeconds(row.Duration);
-          
-          if (timeInSeconds > 0) {
-            const resultData = {
-              athlete_id: athlete.id,
-              meet_id: meet.id,
-              time_seconds: timeInSeconds, // Store as centiseconds (e.g., 783.60 → 78360)
-              place_overall: row.Place || 0,
-              season_year: new Date(meetInfo.date).getFullYear()
-            };
-            
-            console.log(`Creating result for ${row.Athlete}:`, resultData);
-            
-            const { data: result, error: resultError } = await supabase
-              .from('results')
-              .insert(resultData);
-              
-            if (resultError) {
-              console.error('Result creation error:', resultError);
-              setStats(prev => ({ 
-                ...prev, 
-                errors: [...prev.errors, `Failed to create result for ${row.Athlete}: ${resultError.message}`] 
-              }));
-              continue; // Skip this result and continue with next
-            }
-            
-            setStats(prev => ({ 
-              ...prev, 
-              resultsImported: prev.resultsImported + 1 
-            }));
-          } else {
-            setStats(prev => ({ 
-              ...prev, 
-              errors: [...prev.errors, `Invalid time format for ${row.Athlete}: ${row.Duration}`] 
-            }));
-          }
-        }
-
-        // Update progress
-        const progressPercent = 75 + ((i + 1) / data.length) * 20;
-        setProgress({ 
-          stage: 'Importing results...', 
-          current: progressPercent, 
-          total: 100, 
-          message: `Imported ${i + 1} of ${data.length} results` 
-        });
-      }
-
-      setProgress({ 
-        stage: 'Complete!', 
-        current: 100, 
-        total: 100, 
-        message: 'Import completed successfully' 
-      });
-      setImportComplete(true);
-
-    } catch (error: any) {
-      console.error('Import continuation error:', error);
-      setStats(prev => ({ 
-        ...prev, 
-        errors: [...prev.errors, error.message] 
-      }));
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  // Handle course selection from modal
-  const handleCourseSelection = async (course: any) => {
-    setShowCourseSelectionModal(false);
+const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData: any) => {
+  try {
+    setIsImporting(true);
     
-    if (course) {
-      // User selected existing course
-      console.log('Using existing course:', course);
-      if (parsedData.length > 0 && meetInfo) {
-        await continueImport(parsedData, meetInfo, course);
+    // Stage 4: Create meet WITH meet type prompt
+    setProgress({ 
+      stage: 'Creating meet...', 
+      current: 35, 
+      total: 100, 
+      message: 'Setting up meet record in database' 
+    });
+
+    // Prompt for meet type
+    const meetTypeOptions = ['Invitational', 'League', 'Championship', 'Scrimmage', 'Intrasquad'];
+    const meetTypePrompt = `Select meet type for "${meetInfo.name}":\n\n` +
+      meetTypeOptions.map((type, index) => `${index + 1}. ${type}`).join('\n') +
+      '\n\nEnter number (1-5) or type custom name:';
+
+    const meetTypeInput = prompt(meetTypePrompt, '1');
+
+    let meetType = 'League'; // Default
+    if (meetTypeInput) {
+      const typeNumber = parseInt(meetTypeInput.trim());
+      if (typeNumber >= 1 && typeNumber <= meetTypeOptions.length) {
+        meetType = meetTypeOptions[typeNumber - 1];
+      } else if (meetTypeInput.trim().length > 0) {
+        meetType = meetTypeInput.trim();
       }
-    } else {
-      // User wants to create new course
-      if (meetInfo && parsedData.length > 0) {
-        console.log('Creating new course:', meetInfo.courseName);
-        
-        // Ask for difficulty rating
-        const difficultyInput = prompt(
-          `Creating new course: "${meetInfo.courseName}" - ${meetInfo.distance}\n\n` +
-          `Please enter difficulty rating (0-100):\n` +
-          `Consider: hills, terrain, weather, altitude\n` +
-          `Typical range: 30-70`,
-          '50'
-        );
-        
-        const difficulty = parseFloat(difficultyInput || '50');
-        if (isNaN(difficulty) || difficulty < 0 || difficulty > 100) {
-          alert('Invalid difficulty rating. Using default value of 50.');
-        }
-        
-        const finalDifficulty = (isNaN(difficulty) || difficulty < 0 || difficulty > 100) ? 50 : difficulty;
-        
-        const courseData = {
-          name: meetInfo.courseName,
-          distance_meters: meetInfo.distanceMeters,
-          difficulty_rating: finalDifficulty,
-          rating: (finalDifficulty * 4747) / meetInfo.distanceMeters
-        };
-        
-        console.log('Course data being sent:', courseData);
-        
-        const { data: newCourse, error: courseError } = await supabase
-          .from('courses')
-          .insert(courseData)
+    }
+
+    const meetData = {
+      name: meetInfo.name,
+      meet_date: meetInfo.date,
+      meet_type: meetType,
+      course_id: courseData.id
+    };
+
+    const meet = await meetCRUD.create(meetData);
+
+    // Stage 4.5: Create races for this meet
+    setProgress({ 
+      stage: 'Creating races...', 
+      current: 40, 
+      total: 100, 
+      message: 'Setting up race categories' 
+    });
+
+    // Group data by race category and gender
+    const raceGroups = new Map();
+    for (const row of data) {
+      const raceKey = `${row.Race}_${row.Gender}`;
+      if (!raceGroups.has(raceKey)) {
+        raceGroups.set(raceKey, []);
+      }
+      raceGroups.get(raceKey).push(row);
+    }
+
+    // Create race records
+    const raceMap = new Map();
+    for (const [raceKey, participants] of raceGroups) {
+      const [raceCategory, gender] = raceKey.split('_');
+      
+      const race = await raceCRUD.create({
+        meet_id: meet.id,
+        name: `${raceCategory} ${gender}`,
+        category: raceCategory,
+        gender: gender === 'Boys' ? 'M' : 'F',
+        course_id: courseData.id,
+        total_participants: participants.length
+      });
+      
+      raceMap.set(raceKey, race);
+    }
+
+    // Stage 5: Get existing data
+    setProgress({ 
+      stage: 'Loading existing data...', 
+      current: 45, 
+      total: 100, 
+      message: 'Fetching schools and athletes from database' 
+    });
+    
+    const [allExistingSchools, existingAthletes] = await Promise.all([
+      schoolCRUD.getAll(),
+      athleteCRUD.getAll()
+    ]);
+
+    // Stage 6: Process schools
+    setProgress({ 
+      stage: 'Processing schools...', 
+      current: 55, 
+      total: 100, 
+      message: 'Creating missing schools' 
+    });
+    
+    const schoolMap = new Map();
+    const uniqueSchools = [...new Set(data.map(row => row.School.trim()))];
+    
+    for (const schoolName of uniqueSchools) {
+      let school = allExistingSchools.find(s => 
+        s.name.toLowerCase() === schoolName.toLowerCase()
+      );
+      
+      if (!school) {
+        const { data: newSchool, error } = await supabase
+          .from('schools')
+          .insert({ name: schoolName })
           .select()
           .single();
-
-        if (courseError) {
-          console.error('Course creation error details:', courseError);
+        
+        if (error) {
+          console.error('Error creating school:', error);
+          school = { id: 'placeholder', name: schoolName };
+        } else {
+          school = newSchool;
           setStats(prev => ({ 
             ...prev, 
-            errors: [...prev.errors, `Failed to create course: ${courseError.message}`] 
+            schoolsCreated: prev.schoolsCreated + 1 
           }));
-          setIsImporting(false);
-          return;
         }
-
-        console.log('New course created:', newCourse);
-        setStats(prev => ({ ...prev, coursesCreated: 1 }));
-        
-        console.log('Starting continueImport with new course...');
-        await continueImport(parsedData, meetInfo, newCourse);
       }
+      schoolMap.set(schoolName, school);
     }
-  };
+
+    // Stage 7: Process athletes
+    setProgress({ 
+      stage: 'Processing athletes...', 
+      current: 65, 
+      total: 100, 
+      message: 'Creating missing athletes' 
+    });
+    
+    const athleteMap = new Map();
+    
+    for (const row of data) {
+      const { firstName, lastName } = parseAthleteName(row.Athlete);
+      const school = schoolMap.get(row.School.trim());
+      const athleteKey = `${firstName}_${lastName}_${school.id}`;
+      
+      let athlete = existingAthletes.find(a => 
+        a.first_name.toLowerCase() === firstName.toLowerCase() &&
+        a.last_name.toLowerCase() === lastName.toLowerCase() &&
+        a.current_school_id === school.id
+      );
+
+      if (!athlete) {
+        const graduationYear = calculateGraduationYear(
+          row.Grade || 12,
+        new Date(meetInfo.date)
+      );
+        
+        athlete = await athleteCRUD.create({
+          first_name: firstName,
+          last_name: lastName,
+          graduation_year: graduationYear,
+          gender: row.Gender === 'Boys' ? 'M' : row.Gender === 'Girls' ? 'F' : undefined,
+          current_school_id: school.id
+        });
+        
+        setStats(prev => ({ 
+          ...prev, 
+          athletesCreated: prev.athletesCreated + 1 
+        }));
+      }
+      
+      athleteMap.set(athleteKey, athlete);
+    }
+
+    // Stage 8: Import results
+    setProgress({ 
+      stage: 'Importing results...', 
+      current: 75, 
+      total: 100, 
+      message: 'Creating race results' 
+    });
+    
+    for (let i = 0; i < data.length; i++) {
+      const row = data[i];
+      const { firstName, lastName } = parseAthleteName(row.Athlete);
+      const school = schoolMap.get(row.School.trim());
+      const athleteKey = `${firstName}_${lastName}_${school.id}`;
+      const athlete = athleteMap.get(athleteKey);
+      
+      if (athlete) {
+        const timeInSeconds = timeToSeconds(row.Duration);
+        
+        if (timeInSeconds > 0) {
+          const raceKey = `${row.Race}_${row.Gender}`;
+          const race = raceMap.get(raceKey);
+
+          const resultData = {
+            athlete_id: athlete.id,
+            meet_id: meet.id,
+            race_id: race.id,
+            time_seconds: timeInSeconds,
+            place_overall: row.Place || 0,
+            season_year: new Date(meetInfo.date).getFullYear()
+          };
+          
+          const { data: result, error: resultError } = await supabase
+            .from('results')
+            .insert(resultData);
+            
+          if (resultError) {
+            console.error('Result creation error:', resultError);
+            setStats(prev => ({ 
+              ...prev, 
+              errors: [...prev.errors, `Failed to create result for ${row.Athlete}: ${resultError.message}`] 
+            }));
+            continue;
+          }
+          
+          setStats(prev => ({ 
+            ...prev, 
+            resultsImported: prev.resultsImported + 1 
+          }));
+        } else {
+          setStats(prev => ({ 
+            ...prev, 
+            errors: [...prev.errors, `Invalid time format for ${row.Athlete}: ${row.Duration}`] 
+          }));
+        }
+      }
+
+      // Update progress
+      const progressPercent = 75 + ((i + 1) / data.length) * 20;
+      setProgress({ 
+        stage: 'Importing results...', 
+        current: progressPercent, 
+        total: 100, 
+        message: `Imported ${i + 1} of ${data.length} results` 
+      });
+    }
+
+    setProgress({ 
+      stage: 'Complete!', 
+      current: 100, 
+      total: 100, 
+      message: 'Import completed successfully' 
+    });
+    setImportComplete(true);
+
+  } catch (error: any) {
+    console.error('Import continuation error:', error);
+    setStats(prev => ({ 
+      ...prev, 
+      errors: [...prev.errors, error.message] 
+    }));
+  } finally {
+    setIsImporting(false);
+  }
+};
+
+  // Handle course selection from modal
+const handleCourseSelection = async (course: any) => {
+  setShowCourseSelectionModal(false);
+  
+  if (course) {
+    // User selected existing course
+    console.log('Using existing course:', course);
+    if (parsedData.length > 0 && meetInfo) {
+      await continueImport(parsedData, meetInfo, course);
+    }
+  } else {
+    // User wants to create new course
+    if (meetInfo && parsedData.length > 0) {
+      console.log('Creating new course:', meetInfo.courseName);
+      
+      // Ensure we have a course name
+      const finalCourseName = meetInfo.courseName && meetInfo.courseName.trim() 
+        ? meetInfo.courseName.trim() 
+        : 'New Course'; // Fallback if somehow empty
+      
+      // Ask for difficulty rating with corrected defaults and range
+      const difficultyInput = prompt(
+        `Creating new course: "${finalCourseName}" - ${meetInfo.distance}\n\n` +
+        `Please enter difficulty rating:\n` +
+        `Typical range: 0.85 - 1.2\n` +
+        `1.0 = average difficulty`,
+        '1.0'
+      );
+      
+      const difficulty = parseFloat(difficultyInput || '1.0');
+      const finalDifficulty = (isNaN(difficulty) || difficulty < 0.5 || difficulty > 2.0) ? 1.0 : difficulty;
+      
+      // Clean course creation - only essential fields
+      const courseData = {
+        name: finalCourseName, // Ensure this is never empty
+        distance_meters: Math.round(meetInfo.distanceMeters),
+        difficulty_rating: finalDifficulty
+      };
+      
+      console.log('Course data being sent:', courseData);
+      
+      const { data: newCourse, error: courseError } = await supabase
+        .from('courses')
+        .insert(courseData)
+        .select()
+        .single();
+
+      if (courseError) {
+        console.error('Course creation error details:', courseError);
+        setStats(prev => ({ 
+          ...prev, 
+          errors: [...prev.errors, `Failed to create course: ${courseError.message}`] 
+        }));
+        setIsImporting(false);
+        return;
+      }
+
+      console.log('New course created:', newCourse);
+      setStats(prev => ({ ...prev, coursesCreated: 1 }));
+      await continueImport(parsedData, meetInfo, newCourse);
+    }
+  }
+};
 
   // Handle course creation completion
   const handleCourseCreated = async (courseData: any) => {
@@ -611,34 +747,36 @@ const meetData = {
 
                 {/* Meet Info Preview */}
                 {meetInfo && (
-                  <Card className="bg-blue-50">
-                    <CardHeader className="pb-3">
-                      <CardTitle className="text-lg">Detected Meet Information</CardTitle>
-                    </CardHeader>
-                    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="flex items-center gap-2">
-                        <TrendingUp className="h-4 w-4 text-blue-600" />
-                        <span className="font-medium">Meet:</span>
-                        <span>{meetInfo.name}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-blue-600" />
-                        <span className="font-medium">Date:</span>
-                        <span>{meetInfo.date}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin className="h-4 w-4 text-blue-600" />
-                        <span className="font-medium">Distance:</span>
-                        <span>{meetInfo.distance} ({meetInfo.distanceMiles} miles)</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Database className="h-4 w-4 text-blue-600" />
-                        <span className="font-medium">Course:</span>
-                        <span>{meetInfo.courseName}</span>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
+  <Card className="bg-blue-50">
+    <CardHeader className="pb-3">
+      <CardTitle className="text-lg">Detected Meet Information</CardTitle>
+    </CardHeader>
+    <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="flex items-center gap-2">
+        <TrendingUp className="h-4 w-4 text-blue-600" />
+        <span className="font-medium">Meet:</span>
+        <span>{meetInfo.name}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Clock className="h-4 w-4 text-blue-600" />
+        <span className="font-medium">Date:</span>
+        <span>{meetInfo.date}</span>
+      </div>
+      <div className="flex items-center gap-2">
+        <MapPin className="h-4 w-4 text-blue-600" />
+        <span className="font-medium">Distance:</span>
+        <span>
+          {meetInfo.distance} ({Math.round(meetInfo.distanceMiles * 100) / 100} miles)
+        </span>
+      </div>
+      <div className="flex items-center gap-2">
+        <Database className="h-4 w-4 text-blue-600" />
+        <span className="font-medium">Course:</span>
+        <span>{meetInfo.courseName}</span>
+      </div>
+    </CardContent>
+  </Card>
+)}
 
                 {/* Import Button */}
                 <Button 
@@ -808,7 +946,7 @@ const meetData = {
                   Import Another File
                 </Button>
                 <Button 
-                  onClick={() => window.location.href = '/races'} 
+                  onClick={() => window.location.href = '/meets'} 
                   className="flex-1"
                 >
                   View Imported Meet

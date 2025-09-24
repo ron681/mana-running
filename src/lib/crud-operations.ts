@@ -104,21 +104,24 @@ export const schoolCRUD = {
 export const meetCRUD = {
   // GET: Fetch all meets with course and result count
   async getAll() {
-    const { data, error } = await supabase
-      .from('meets')
-      .select(`
-        *,
-        course:courses(name),
-        results(count)
-      `)
-      .order('meet_date', { ascending: false });
-    
-    if (error) throw error;
-    return data?.map(meet => ({
-      ...meet,
-      participants_count: meet.results[0]?.count || 0
-    }));
-  },
+  const { data, error } = await supabase
+    .from('meets')
+    .select(`
+      *,
+      races(
+        id,
+        name,
+        category,
+        gender,
+        total_participants,
+        course:courses(name)
+      )
+    `)
+    .order('meet_date', { ascending: false });
+  
+  if (error) throw error;
+  return data;
+},
 
   // GET: Fetch meet by ID with all results
   async getById(id: string) {
@@ -478,13 +481,143 @@ export const resultCRUD = {
     return count;
   }
 };
+// ==================== RACE CRUD OPERATIONS ====================
 
+export const raceCRUD = {
+  // GET: Fetch all races with meet and course info
+  async getAll() {
+    const { data, error } = await supabase
+      .from('races')
+      .select(`
+        *,
+        meet:meets(name, meet_date),
+        course:courses(name, distance_miles),
+        results(count)
+      `)
+      .order('meet_id')
+      .order('category')
+      .order('gender');
+    
+    if (error) throw error;
+    return data?.map(race => ({
+      ...race,
+      participants_count: race.results[0]?.count || 0
+    }));
+  },
 
+  // GET: Fetch race by ID with full details
+  async getById(id: string) {
+    const { data, error } = await supabase
+      .from('races')
+      .select(`
+        *,
+        meet:meets(*),
+        course:courses(*),
+        results(
+          *,
+          athlete:athletes(
+            *,
+            school:schools(name)
+          )
+        )
+      `)
+      .eq('id', id)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
 
+  // GET: Fetch races by meet ID
+  async getByMeetId(meetId: string) {
+    const { data, error } = await supabase
+      .from('races')
+      .select(`
+        *,
+        course:courses(name, distance_miles),
+        results(count)
+      `)
+      .eq('meet_id', meetId)
+      .order('category')
+      .order('gender');
+    
+    if (error) throw error;
+    return data?.map(race => ({
+      ...race,
+      participants_count: race.results[0]?.count || 0
+    }));
+  },
 
+  // POST: Create new race
+  async create(raceData: {
+    meet_id: string;
+    name: string;
+    category: string;
+    gender: string;
+    course_id?: string;
+    total_participants?: number;
+  }) {
+    const { data, error } = await supabase
+      .from('races')
+      .insert(raceData)
+      .select(`
+        *,
+        meet:meets(name),
+        course:courses(name)
+      `)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
 
+  // PUT: Update race
+  async update(id: string, updates: Partial<{
+    name: string;
+    category: string;
+    gender: string;
+    course_id: string;
+    total_participants: number;
+    results_finalized: boolean;
+  }>) {
+    const { data, error } = await supabase
+      .from('races')
+      .update(updates)
+      .eq('id', id)
+      .select(`
+        *,
+        meet:meets(name),
+        course:courses(name)
+      `)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
 
+  // DELETE: Delete race and all results
+  async delete(id: string) {
+    // Get result count for confirmation
+    const { data: results } = await supabase
+      .from('results')
+      .select('id')
+      .eq('race_id', id);
 
+    // Delete all results for this race
+    if (results && results.length > 0) {
+      await supabase
+        .from('results')
+        .delete()
+        .eq('race_id', id);
+    }
 
-
-
+    // Delete race
+    const { error } = await supabase
+      .from('races')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
+    return { deletedResultsCount: results?.length || 0 };
+  }
+};

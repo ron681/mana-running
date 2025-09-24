@@ -1,6 +1,7 @@
-// src/lib/import-utilities.ts
-// Utility functions for data import processing
+// Enhanced Import Utilities for Multi-Race Meets
+import { supabase } from './supabase'
 
+// Core interfaces
 export interface ParsedRaceData {
   Place: number;
   Grade: number;
@@ -11,6 +12,19 @@ export interface ParsedRaceData {
   Gender: string;
 }
 
+export interface ParsedAthleteName {
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  needsReview?: boolean;
+}
+
+export interface DuplicateCheckResult {
+  isDuplicate: boolean;
+  existingAthleteId?: string;
+  conflictReason?: string;
+}
+
 export interface MeetInfo {
   name: string;
   date: string;
@@ -19,6 +33,8 @@ export interface MeetInfo {
   distanceMeters: number;
   distanceMiles: number;
   courseName: string;
+  // Optional metadata for UI handling
+  _needsManualCourseName?: boolean;
 }
 
 export interface ImportStats {
@@ -29,9 +45,174 @@ export interface ImportStats {
   errors: string[];
 }
 
-/**
- * Convert time string (MM:SS.SS) to total seconds
- */
+// ENHANCED NAME PARSING
+export function parseAthleteName(fullName: string): ParsedAthleteName {
+  if (!fullName || typeof fullName !== 'string') {
+    throw new Error('Invalid name provided');
+  }
+
+  const trimmedName = fullName.trim();
+  if (!trimmedName) {
+    throw new Error('Empty name provided');
+  }
+
+  const nameParts = trimmedName.split(/\s+/);
+  
+  if (nameParts.length === 1) {
+    return {
+      firstName: nameParts[0],
+      lastName: '[Single Name]',
+      fullName: trimmedName,
+      needsReview: true
+    };
+  }
+
+  // Check for suffixes (Jr, Sr, II, III, etc.)
+  const suffixes = ['jr', 'sr', 'ii', 'iii', 'iv', 'v', '2nd', '3rd', '4th'];
+  const lastPart = nameParts[nameParts.length - 1].toLowerCase().replace('.', '');
+  
+  let actualNameParts = [...nameParts];
+  let suffix = '';
+  
+  if (suffixes.includes(lastPart)) {
+    suffix = nameParts.pop() || '';
+    actualNameParts = nameParts;
+  }
+
+  // Check for compound last name prefixes
+  const compoundPrefixes = ['van', 'de', 'del', 'della', 'von', 'mc', 'mac', 'o\'', 'le', 'la', 'du'];
+  
+  if (actualNameParts.length >= 3) {
+    const secondToLast = actualNameParts[actualNameParts.length - 2].toLowerCase().replace('\'', '');
+    
+    if (compoundPrefixes.some(prefix => secondToLast.startsWith(prefix.replace('\'', '')))) {
+      const lastName = actualNameParts.slice(-2).join(' ');
+      const firstName = actualNameParts.slice(0, -2).join(' ');
+      
+      return {
+        firstName: firstName,
+        lastName: suffix ? `${lastName} ${suffix}` : lastName,
+        fullName: trimmedName,
+        needsReview: false
+      };
+    }
+  }
+
+  // Standard case: last word is last name
+  const lastName = actualNameParts[actualNameParts.length - 1];
+  const firstName = actualNameParts.slice(0, -1).join(' ');
+
+  return {
+    firstName: firstName,
+    lastName: suffix ? `${lastName} ${suffix}` : lastName,
+    fullName: trimmedName,
+    needsReview: false
+  };
+}
+
+// DUPLICATE DETECTION
+export async function checkForDuplicateAthlete(
+  firstName: string,
+  lastName: string,
+  schoolName: string,
+  graduationYear: number
+): Promise<DuplicateCheckResult> {
+  
+  const normalizedSchool = normalizeSchoolName(schoolName);
+  
+  const { data: exactMatch, error: exactError } = await supabase
+    .from('athletes')
+    .select(`
+      id,
+      first_name,
+      last_name,
+      graduation_year,
+      schools:current_school_id(name)
+    `)
+    .ilike('first_name', firstName.trim())
+    .ilike('last_name', lastName.trim())
+    .eq('graduation_year', graduationYear);
+
+  if (exactError) {
+    console.error('Error checking for duplicate athletes:', exactError);
+    return { isDuplicate: false };
+  }
+
+  if (exactMatch && exactMatch.length > 0) {
+    const schoolMatch = exactMatch.find(athlete => 
+      normalizeSchoolName(athlete.schools?.name || '') === normalizedSchool
+    );
+
+    if (schoolMatch) {
+      return {
+        isDuplicate: true,
+        existingAthleteId: schoolMatch.id,
+        conflictReason: 'Exact match found'
+      };
+    }
+
+    return {
+      isDuplicate: true,
+      existingAthleteId: exactMatch[0].id,
+      conflictReason: `Same athlete found at different school: ${exactMatch[0].schools?.name}`
+    };
+  }
+
+  return { isDuplicate: false };
+}
+
+// SCHOOL NAME NORMALIZATION
+export function normalizeSchoolName(schoolName: string): string {
+  if (!schoolName || typeof schoolName !== 'string') {
+    return '';
+  }
+
+  return schoolName
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/\bHigh School\b/gi, 'HS')
+    .replace(/\bMiddle School\b/gi, 'MS')
+    .replace(/\bPrep\b/gi, 'Preparatory')
+    .toLowerCase()
+    .split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+// RACE CATEGORY PARSING
+export function parseRaceCategory(raceString: string, gender: string): {
+  category: string;
+  name: string;
+  distance?: string;
+} {
+  if (!raceString) {
+    return { category: 'Varsity', name: `Varsity ${gender}` };
+  }
+
+  const lower = raceString.toLowerCase();
+  
+  // Extract distance if present
+  const distanceMatch = raceString.match(/(\d+(?:\.\d+)?)\s*(mile|k|km|m)/i);
+  const distance = distanceMatch ? distanceMatch[0] : undefined;
+
+  // Determine category
+  let category = 'Varsity';
+  
+  if (lower.includes('varsity')) category = 'Varsity';
+  else if (lower.includes('jv') || lower.includes('junior varsity')) category = 'JV';
+  else if (lower.includes('freshman') || lower.includes('frosh')) category = 'Freshman';
+  else if (lower.includes('reserves') || lower.includes('reserve')) category = 'Reserves';
+  else if (lower.includes('sophomore')) category = 'Sophomore';
+  else if (lower.includes('novice')) category = 'Novice';
+
+  return {
+    category,
+    name: `${category} ${gender}`,
+    distance
+  };
+}
+
+// TIME CONVERSION
 export function timeToSeconds(timeString: string): number {
   if (!timeString || typeof timeString !== 'string') {
     return 0;
@@ -58,126 +239,186 @@ export function timeToSeconds(timeString: string): number {
   }
 }
 
-/**
- * Extract meet information from CSV data and filename
- */
-export function extractMeetInfo(data: ParsedRaceData[], filename: string): MeetInfo {
-  // Parse date from filename (e.g., "2025 0913 Baylands.csv")
-  let meetDate = '';
-  const datePatterns = [
-    /(\d{4})\s*(\d{2})(\d{2})/, // YYYY MMDD
-    /(\d{4})-(\d{2})-(\d{2})/, // YYYY-MM-DD
-    /(\d{2})(\d{2})(\d{4})/    // MMDDYYYY
+// GRADUATION YEAR CALCULATION
+export function calculateGraduationYear(grade: number, currentDate: Date = new Date()): number {
+  const currentYear = currentDate.getFullYear();
+  const currentMonth = currentDate.getMonth();
+  
+  // Academic year starts in July (month 6)
+  const academicYear = currentMonth >= 6 ? currentYear + 1 : currentYear;
+  
+  // Calculate graduation year: 12th grade graduates in current academic year
+  return academicYear + (12 - grade);
+}
+
+// ENHANCED DISTANCE PARSING - NO ROUNDING for precision
+function parseDistanceString(str: string): { meters: number; display: string } {
+  if (!str) return { meters: 0, display: '' };
+  
+  const lower = str.toLowerCase();
+  
+  // Common XC distances - exact matches first
+  if (lower.includes('5k') || lower.includes('5000') || lower.includes('3.1')) {
+    return { meters: 5000, display: '5K' };
+  }
+  if (lower.includes('2.74') || lower.includes('4400')) {
+    return { meters: 4409.5776, display: '2.74 Miles' }; // Exact conversion
+  }
+  if (lower.includes('4k') || lower.includes('4000')) {
+    return { meters: 4000, display: '4K' };
+  }
+  if (lower.includes('3k') || lower.includes('3000')) {
+    return { meters: 3000, display: '3K' };
+  }
+  
+  // Pattern matching for flexible parsing - MILES FIRST for accuracy
+  const patterns = [
+    // Mile patterns (process first for precision) - NO ROUNDING
+    { regex: /(\d+\.?\d*)\s*mile/i, multiplier: 1609.344, unit: ' Mile', precision: 'high' },
+    // Kilometer patterns
+    { regex: /(\d+\.?\d*)\s*k(?:m)?/i, multiplier: 1000, unit: 'K', precision: 'medium' },
+    // Meter patterns (exact)
+    { regex: /(\d+)\s*meter/i, multiplier: 1, unit: 'm', precision: 'exact' },
+    { regex: /(\d+)m(?!\w)/i, multiplier: 1, unit: 'm', precision: 'exact' }
   ];
   
-  for (const pattern of datePatterns) {
-    const match = filename.match(pattern);
+  for (const { regex, multiplier, unit, precision } of patterns) {
+    const match = str.match(regex);
     if (match) {
-      if (pattern.source.includes('(\\d{4})\\s*(\\d{2})(\\d{2})')) {
-        // YYYY MMDD format
-        const [, year, month, day] = match;
-        meetDate = `${year}-${month}-${day}`;
-      } else if (pattern.source.includes('(\\d{4})-(\\d{2})-(\\d{2})')) {
-        // YYYY-MM-DD format
-        meetDate = match[0];
-      } else if (pattern.source.includes('(\\d{2})(\\d{2})(\\d{4})')) {
-        // MMDDYYYY format
-        const [, month, day, year] = match;
-        meetDate = `${year}-${month}-${day}`;
+      const num = parseFloat(match[1]);
+      if (num > 0) {
+        // For miles, use exact conversion factor and don't round
+        const meters = num * multiplier;
+        
+        const displayValue = precision === 'high' && num !== 1 
+          ? `${num}${unit}s` 
+          : `${num}${unit}`;
+          
+        return { 
+          meters, // Store exact value, no rounding
+          display: displayValue
+        };
       }
-      break;
     }
   }
   
-  // If no date found in filename, use current date
-  if (!meetDate) {
-    meetDate = new Date().toISOString().split('T')[0];
+  return { meters: 0, display: str };
+}
+
+// ENHANCED MEET INFO EXTRACTION
+export function extractMeetInfo(data: any[], fileName: string): MeetInfo {
+  if (!data || data.length === 0) {
+    throw new Error('No data provided to extract meet info');
   }
 
-  // Extract meet name from filename
-  let meetName = filename
-    .replace(/\d{4}\s*\d{4}/, '') // Remove date patterns
-    .replace(/\.(csv|pdf)$/i, '') // Remove file extension
-    .replace(/[_-]/g, ' ') // Replace underscores and dashes with spaces
-    .trim();
+  const firstRow = data[0];
   
-  // Add "Invitational" if the name suggests it's a meet (like "Baylands")
-  if (meetName && !meetName.toLowerCase().includes('invitational') && 
-      !meetName.toLowerCase().includes('meet') && 
-      !meetName.toLowerCase().includes('championship')) {
-    meetName = meetName + ' Invitational';
-  }
-  
-  if (!meetName) {
-    meetName = 'Imported Meet';
+  // Extract meet name - CSV first, then filename fallback
+  let meetName = '';
+  if (firstRow.Meet) {
+    meetName = firstRow.Meet.toString().trim();
+  } else if (firstRow['Meet Name']) {
+    meetName = firstRow['Meet Name'].toString().trim();
+  } else if (firstRow.Event) {
+    meetName = firstRow.Event.toString().trim();
+  } else if (firstRow.Competition) {
+    meetName = firstRow.Competition.toString().trim();
+  } else {
+    meetName = fileName
+      .replace(/\.(csv|xlsx|xls)$/i, '')
+      .replace(/^\d{4}\s*\d{4}\s*/, '')
+      .replace(/^[\d\s-]+/, '')
+      .replace(/_/g, ' ')
+      .trim() || 'Imported Meet';
   }
 
-  // Determine distance from data or assume standard distances
-  let distanceMeters = 4000; // Default to 4K based on your example
-  let distance = '4K';
+  // Extract course name - CSV first, then mark for manual entry
+  let courseName = '';
+  let needsManualCourseName = false;
   
-  // Try to extract distance from race categories
-  if (data.length > 0) {
+  if (firstRow.Course) {
+    courseName = firstRow.Course.toString().trim();
+  } else if (firstRow.Location) {
+    courseName = firstRow.Location.toString().trim();
+  } else if (firstRow.Site) {
+    courseName = firstRow.Site.toString().trim();
+  } else if (firstRow.Venue) {
+    courseName = firstRow.Venue.toString().trim();
+  } else {
+    // Mark for manual entry instead of using fallbacks
+    courseName = '';
+    needsManualCourseName = true;
+  }
+
+  // Extract date - CSV first, then filename
+  let meetDate = '';
+  if (firstRow.Date) {
+    meetDate = firstRow.Date.toString().trim();
+  } else if (firstRow['Meet Date']) {
+    meetDate = firstRow['Meet Date'].toString().trim();
+  } else {
+    const dateMatch = fileName.match(/(\d{4})\s*(\d{2})(\d{2})/);
+    if (dateMatch) {
+      const [, year, month, day] = dateMatch;
+      meetDate = `${year}-${month}-${day}`;
+    } else {
+      meetDate = new Date().toISOString().split('T')[0];
+    }
+  }
+
+  // ENHANCED: Distance extraction with mile-first priority
+  let distanceMeters = 5000; // Default to 5K
+  let distance = '5K';
+  let sourceDistance = '';
+  
+  // Check CSV columns first
+  if (firstRow.Distance) {
+    sourceDistance = firstRow.Distance.toString().trim();
+  } else if (firstRow['Race Distance']) {
+    sourceDistance = firstRow['Race Distance'].toString().trim();
+  }
+  
+  if (sourceDistance) {
+    const parsed = parseDistanceString(sourceDistance);
+    if (parsed.meters > 0) {
+      distanceMeters = parsed.meters;
+      distance = parsed.display;
+      
+      console.log(`Distance parsed from CSV: "${sourceDistance}" → ${distanceMeters}m (${distance})`);
+    }
+  } else if (data.length > 0) {
+    // Analyze race names for distance
     const raceTypes = [...new Set(data.map(row => row.Race))];
-    
     for (const race of raceTypes) {
-      // Look for distance indicators in race names
-      const distancePatterns = [
-        { pattern: /(\d+)k/i, multiplier: 1000 },
-        { pattern: /(\d+)\s*km/i, multiplier: 1000 },
-        { pattern: /(\d+)\s*meter/i, multiplier: 1 },
-        { pattern: /(\d+)m(?!\w)/i, multiplier: 1 },
-        { pattern: /(\d+)\s*mile/i, multiplier: 1609.34 }
-      ];
-      
-      for (const { pattern, multiplier } of distancePatterns) {
-        const match = race.match(pattern);
-        if (match) {
-          const num = parseFloat(match[1]);
-          if (num > 0) {
-            distanceMeters = Math.round(num * multiplier);
-            distance = `${num}${multiplier === 1000 ? 'K' : multiplier === 1609.34 ? ' Mile' : 'M'}`;
-            break;
-          }
-        }
+      const parsed = parseDistanceString(race);
+      if (parsed.meters > 0) {
+        distanceMeters = parsed.meters;
+        distance = parsed.display;
+        console.log(`Distance parsed from race name: "${race}" → ${distanceMeters}m (${distance})`);
+        break;
       }
-      
-      if (distanceMeters !== 4000) break; // Found a distance, stop looking
     }
   }
 
-  const distanceMiles = distanceMeters / 1609.34;
+  // Calculate miles for display - preserve precision internally, round for display
+  const distanceMiles = distanceMeters / 1609.344;
+
+  console.log(`Final distance: ${Math.round(distanceMeters)}m = ${Math.round(distanceMiles * 100) / 100} miles`);
 
   return {
     name: meetName,
     date: meetDate,
-    location: 'TBD', // Will be filled when course is created
+    location: courseName,
     distance,
-    distanceMeters,
-    distanceMiles: Math.round(distanceMiles * 100) / 100,
-    courseName: meetName.replace(' Invitational', '') + ' Park'
+    distanceMeters, // Store exact value for calculations
+    distanceMiles,  // Store exact value for calculations (UI will round for display)
+    courseName,
+    // Add metadata to indicate manual input needed
+    _needsManualCourseName: needsManualCourseName
   };
 }
 
-/**
- * Check if time string is in valid format
- */
-function isValidTimeFormat(timeString: string): boolean {
-  if (!timeString || typeof timeString !== 'string') {
-    return false;
-  }
-  
-  const timePatterns = [
-    /^\d{1,2}:\d{2}(?:\.\d{1,2})?$/, // MM:SS or MM:SS.SS
-    /^\d+(?:\.\d{1,2})?$/            // SS.SS (seconds only)
-  ];
-  
-  return timePatterns.some(pattern => pattern.test(timeString.trim()));
-}
-
-/**
- * Validate CSV data structure
- */
+// CSV DATA VALIDATION
 export function validateCSVData(data: any[]): { isValid: boolean; errors: string[] } {
   const errors: string[] = [];
   
@@ -186,7 +427,6 @@ export function validateCSVData(data: any[]): { isValid: boolean; errors: string
     return { isValid: false, errors };
   }
 
-  // Check required columns
   const requiredColumns = ['Place', 'Athlete', 'Duration', 'School', 'Gender'];
   const firstRow = data[0];
   
@@ -196,21 +436,17 @@ export function validateCSVData(data: any[]): { isValid: boolean; errors: string
     }
   }
 
-  // Validate data types and formats
-  for (let i = 0; i < Math.min(data.length, 10); i++) { // Check first 10 rows
+  for (let i = 0; i < Math.min(data.length, 10); i++) {
     const row = data[i];
     
-    // Check Place is a number
     if (row.Place && isNaN(Number(row.Place))) {
       errors.push(`Row ${i + 1}: Place should be a number`);
     }
     
-    // Check Duration format
     if (row.Duration && !isValidTimeFormat(row.Duration)) {
       errors.push(`Row ${i + 1}: Invalid time format for Duration: ${row.Duration}`);
     }
     
-    // Check required fields are not empty
     if (!row.Athlete || !row.School) {
       errors.push(`Row ${i + 1}: Missing athlete name or school`);
     }
@@ -219,48 +455,20 @@ export function validateCSVData(data: any[]): { isValid: boolean; errors: string
   return { isValid: errors.length === 0, errors };
 }
 
-/**
- * Clean and normalize athlete name
- */
-export function normalizeAthleteName(name: string): { firstName: string; lastName: string } {
-  if (!name || typeof name !== 'string') {
-    return { firstName: 'Unknown', lastName: 'Athlete' };
+function isValidTimeFormat(timeString: string): boolean {
+  if (!timeString || typeof timeString !== 'string') {
+    return false;
   }
   
-  const cleaned = name.trim().replace(/\s+/g, ' ');
-  const parts = cleaned.split(' ');
+  const timePatterns = [
+    /^\d{1,2}:\d{2}(?:\.\d{1,2})?$/,
+    /^\d+(?:\.\d{1,2})?$/
+  ];
   
-  if (parts.length === 1) {
-    return { firstName: parts[0], lastName: '' };
-  } else if (parts.length === 2) {
-    return { firstName: parts[0], lastName: parts[1] };
-  } else {
-    // More than 2 parts - first name is first part, last name is everything else
-    return { 
-      firstName: parts[0], 
-      lastName: parts.slice(1).join(' ') 
-    };
-  }
+  return timePatterns.some(pattern => pattern.test(timeString.trim()));
 }
 
-/**
- * Calculate graduation year from grade
- */
-export function calculateGraduationYear(grade: number, currentYear?: number): number {
-  const year = currentYear || new Date().getFullYear();
-  
-  // Assuming grades 9-12 for high school
-  if (grade >= 9 && grade <= 12) {
-    return year + (12 - grade);
-  }
-  
-  // Default for invalid grades
-  return year + 1;
-}
-
-/**
- * Deduplicate athletes by name and school
- */
+// DATA UTILITY FUNCTIONS
 export function deduplicateAthletes(data: ParsedRaceData[]): ParsedRaceData[] {
   const seen = new Set<string>();
   const deduplicated: ParsedRaceData[] = [];
@@ -277,9 +485,6 @@ export function deduplicateAthletes(data: ParsedRaceData[]): ParsedRaceData[] {
   return deduplicated;
 }
 
-/**
- * Group data by race categories
- */
 export function groupByRace(data: ParsedRaceData[]): Map<string, ParsedRaceData[]> {
   const groups = new Map<string, ParsedRaceData[]>();
   
@@ -296,9 +501,6 @@ export function groupByRace(data: ParsedRaceData[]): Map<string, ParsedRaceData[
   return groups;
 }
 
-/**
- * Validate meet date format
- */
 export function validateMeetDate(dateString: string): boolean {
   if (!dateString) return false;
   
@@ -306,9 +508,6 @@ export function validateMeetDate(dateString: string): boolean {
   return !isNaN(date.getTime()) && date.getFullYear() >= 1900 && date.getFullYear() <= 2100;
 }
 
-/**
- * Format file size for display
- */
 export function formatFileSize(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
   
