@@ -68,6 +68,7 @@ export default async function RaceResultsPage({
   if (raceError || !race) {
     notFound()
   }
+const meet = Array.isArray(race.meets) ? race.meets[0] : race.meets;
 
   // Get all results for this race
   const { data: results, error: resultsError } = await supabase
@@ -97,7 +98,7 @@ const raceResults: RaceResult[] = results?.map((result) => {
   // Safe array access helpers
   const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes;
   const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null;
-  const meet = Array.isArray(race.meets) ? race.meets[0] : race.meets;
+  
   
   return {
     id: result.id,
