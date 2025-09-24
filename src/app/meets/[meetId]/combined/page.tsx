@@ -1,4 +1,4 @@
-// app/meets/[meetId]/combined/page.tsx
+// app/meets/[meetId]/combined/page.tsx - Minimal fix preserving all features
 import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
@@ -25,8 +25,8 @@ interface Meet {
   meet_type: string
   courses: {
     name: string
-    distance_miles: number
-  }
+    distance_meters: number // Changed from distance_miles to match your schema
+  }[]
 }
 
 export default async function CombinedResultsPage({
@@ -34,7 +34,7 @@ export default async function CombinedResultsPage({
 }: {
   params: { meetId: string }
 }) {
-  const supabase = createServerComponentClient({ cookies })
+  const supabase = createServerComponentClient({ cookies }) // Back to your original working client
   
   // Get meet details
   const { data: meet, error: meetError } = await supabase
@@ -46,7 +46,7 @@ export default async function CombinedResultsPage({
       meet_type,
       courses(
         name,
-        distance_miles
+        distance_meters
       )
     `)
     .eq('id', params.meetId)
@@ -84,18 +84,25 @@ export default async function CombinedResultsPage({
     return <div>Error loading results</div>
   }
 
-  // Process and transform results to match expected format
-const combinedResults: CombinedResult[] = results?.map((result, index) => ({
-  id: result.id,
-  place: index + 1,
-  athlete_name: `${result.athletes[0].first_name} ${result.athletes[0].last_name}`,
-  athlete_grade: getGradeDisplay(result.athletes[0].graduation_year, meet.meet_date),
-  team_name: result.athletes[0].schools[0].name,
-  time_seconds: result.time_seconds,
-  race_name: result.races[0].name,
-  race_category: result.races[0].category,
-  race_gender: result.races[0].gender
-})) || [] 
+  // Process and transform results with safe array access
+  const combinedResults: CombinedResult[] = results?.map((result, index) => {
+    // Safe array access with fallbacks
+    const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes
+    const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null
+    const race = Array.isArray(result.races) ? result.races[0] : result.races
+
+    return {
+      id: result.id,
+      place: index + 1,
+      athlete_name: `${athlete.first_name} ${athlete.last_name}`,
+      athlete_grade: getGradeDisplay(athlete.graduation_year, meet.meet_date),
+      team_name: school?.name || 'Unknown School',
+      time_seconds: result.time_seconds,
+      race_name: race.name,
+      race_category: race.category,
+      race_gender: race.gender
+    }
+  }) || []
 
   // Group results by gender for separate rankings
   const boyResults = combinedResults.filter(r => r.race_gender === 'M')
@@ -104,6 +111,9 @@ const combinedResults: CombinedResult[] = results?.map((result, index) => ({
   // Reassign places within gender groups
   const boysWithPlaces = boyResults.map((result, index) => ({ ...result, place: index + 1 }))
   const girlsWithPlaces = girlResults.map((result, index) => ({ ...result, place: index + 1 }))
+
+  // Safe course access
+  const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -121,25 +131,27 @@ const combinedResults: CombinedResult[] = results?.map((result, index) => ({
             Combined Results - {meet.name}
           </h1>
           <p className="text-gray-600 mb-4">
-            {formatMeetDate(meet.meet_date)} • {meet.meet_type} • {meet.courses[0].name} ({meet.courses[0].distance_miles} mi)
+            {formatMeetDate(meet.meet_date)} • {meet.meet_type} • {course?.name} ({((course?.distance_meters || 0) / 1609.34).toFixed(2)} mi)
           </p>
           <p className="text-lg font-medium text-gray-900">
             {combinedResults.length} total finishers across all races
           </p>
         </div>
       </div>
-{/* Toggle buttons for gender */}
-<div className="mb-6 flex gap-2">
-  <button className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium">
-    All Results
-  </button>
-  <a href="#boys-results" className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium">
-    Boys ({boysWithPlaces.length})
-  </a>
-  <a href="#girls-results" className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium">
-    Girls ({girlsWithPlaces.length})
-  </a>
-</div>
+
+      {/* Toggle buttons for gender */}
+      <div className="mb-6 flex gap-2">
+        <button className="bg-blue-600 text-white px-4 py-2 rounded-lg font-medium">
+          All Results
+        </button>
+        <a href="#boys-results" className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium">
+          Boys ({boysWithPlaces.length})
+        </a>
+        <a href="#girls-results" className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium">
+          Girls ({girlsWithPlaces.length})
+        </a>
+      </div>
+
       {combinedResults.length === 0 ? (
         <div className="text-center py-12">
           <h2 className="text-xl text-gray-600 mb-4">No results found</h2>
