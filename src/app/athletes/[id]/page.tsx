@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { notFound } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { formatTime } from '@/lib/timeConverter'
+import { getGradeDisplay } from '@/lib/grade-utils'
 
 interface Athlete {
   id: string
@@ -72,14 +73,6 @@ function formatDate(dateString: string): string {
   })
 }
 
-function getGradeLevel(graduationYear: number, currentYear: number = 2025): string {
-  const grade = 12 - (graduationYear - currentYear)
-  if (grade < 9) return 'Alumni'
-  if (grade > 12) return 'Future'
-  
-  const gradeNames = { 9: 'Freshman', 10: 'Sophomore', 11: 'Junior', 12: 'Senior' }
-  return gradeNames[grade as keyof typeof gradeNames] || `Grade ${grade}`
-}
 
 function formatGraduationYear(year: number): string {
   // Ensure we always display full 4-digit year
@@ -204,7 +197,7 @@ export default function AthletePage({ params }: { params: { id: string } }) {
             <div className="flex items-center gap-4 mt-2 text-gray-600">
               <span className="font-medium">{athlete.schools.name}</span>
               <span>•</span>
-              <span>{getGradeLevel(athlete.graduation_year)}</span>
+              <span>{getGradeDisplay(athlete.graduation_year, new Date().toISOString())}</span>
               <span>•</span>
               <span>Class of {formatGraduationYear(athlete.graduation_year)}</span>
               <span>•</span>
@@ -372,7 +365,7 @@ export default function AthletePage({ params }: { params: { id: string } }) {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <a 
-                          href={`/races/${result.meet_id}`}
+                          href={`/meets/${result.meet_id}`}
                           className="text-blue-600 hover:text-blue-800 hover:underline"
                         >
                           {result.meet_name}
