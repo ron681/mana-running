@@ -163,10 +163,10 @@ const raceResults: RaceResult[] = results?.map((result) => {
           
           <div className="grid md:grid-cols-2 gap-4 text-gray-600 mb-4">
             <div>
-              <p className="mb-2"><strong>Meet:</strong> {race.meets.name}</p>
-              <p className="mb-2"><strong>Date:</strong> {formatMeetDate(race.meets.meet_date)}</p>
-              <p className="mb-2"><strong>Type:</strong> {race.meets.meet_type}</p>
-            </div>
+              <p className="mb-2"><strong>Meet:</strong> {meet?.name}</p>
+              <p className="mb-2"><strong>Date:</strong> {formatMeetDate(meet?.meet_date)}</p>
+              <p className="mb-2"><strong>Type:</strong> {meet?.meet_type}</p>            
+              </div>
             <div>
               <p className="mb-2"><strong>Course:</strong> {race.meets.courses.name}</p>
               <p className="mb-2"><strong>Distance:</strong> {race.meets.courses.distance_miles} miles</p>
