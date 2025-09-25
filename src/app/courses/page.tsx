@@ -8,13 +8,10 @@ interface Course {
   name: string
   distance_meters: number
   distance_miles: number
-  difficulty_rating: number
-  rating: number
+  rating: number | null
   rating_confidence: string
   total_results_count: number
   meets_count?: number
-  display_rating: number  // Added by CRUD operation
-  has_calculated_rating: boolean  // Added by CRUD operation
 }
 
 export default function CoursesPage() {
@@ -50,12 +47,6 @@ export default function CoursesPage() {
     } finally {
       setLoading(false)
     }
-  }
-
-  // Helper function to get the best available rating
-  const getCourseRating = (course: Course): number => {
-    // Prefer calculated rating, fallback to difficulty_rating, then 0
-    return course.rating ?? course.difficulty_rating ?? 0
   }
 
   // Filter courses based on search and distance
@@ -210,7 +201,7 @@ export default function CoursesPage() {
                   <tr className="border-b text-left bg-gray-50">
                     <th className="py-3 px-4 font-bold text-black">Course Name</th>
                     <th className="py-3 px-4 font-bold text-black">Distance</th>
-                    <th className="py-3 px-4 font-bold text-black">Difficulty</th>
+                    <th className="py-3 px-4 font-bold text-black">Rating</th>
                     <th className="py-3 px-4 font-bold text-black">Meets</th>
                     <th className="py-3 px-4 font-bold text-black">Total Results</th>
                     <th className="py-3 px-4 font-bold text-black">Actions</th>
@@ -218,9 +209,6 @@ export default function CoursesPage() {
                 </thead>
                 <tbody>
                   {currentCourses.map((course) => {
-                    const courseRating = getCourseRating(course)
-                    const isCalculatedRating = course.rating !== null && course.rating !== undefined
-                    
                     return (
                       <tr key={course.id} className="border-b hover:bg-gray-50">
                         <td className="py-4 px-4">
@@ -242,23 +230,13 @@ export default function CoursesPage() {
                           </div>
                         </td>
                         <td className="py-4 px-4">
-                          {course.display_rating !== null ? (
+                          {course.rating !== null ? (
                             <div className="flex flex-col space-y-1">
-                              <div className="flex items-center gap-2">
-                                <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.display_rating)}`}>
-                                  {getDifficultyLabel(course.display_rating)}
-                                </span>
-                                {course.has_calculated_rating && (
-                                  <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                                    Calculated
-                                  </span>
-                                )}
-                              </div>
+                              <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.rating)}`}>
+                                {getDifficultyLabel(course.rating)}
+                              </span>
                               <span className="text-xs text-gray-500">
-                                {course.display_rating.toFixed(3)}
-                                {!course.has_calculated_rating && (
-                                  <span className="ml-1 text-gray-400">(estimated)</span>
-                                )}
+                                {course.rating.toFixed(3)}
                               </span>
                             </div>
                           ) : (
