@@ -139,13 +139,12 @@ export async function checkForDuplicateAthlete(
   }
 
   if (exactMatch && exactMatch.length > 0) {
-   const schoolMatch = exactMatch.find(athlete => {
-  const schoolName = (() => {
-    if (Array.isArray(athlete.schools)) {
-      return athlete.schools[0]?.name || '';
-    }
-    return athlete.schools?.name || '';
-  })();
+const schoolMatch = exactMatch.find(athlete => {
+  const athleteTyped = athlete as any;
+  const schools = athleteTyped.schools;
+  const schoolName = Array.isArray(schools) 
+    ? schools[0]?.name || '' 
+    : schools?.name || '';
   
   return normalizeSchoolName(schoolName) === normalizedSchool;
 });
