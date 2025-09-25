@@ -1,3 +1,4 @@
+// src/app/schools/[id]/page.tsx
 'use client'
 
 import { useEffect, useState } from 'react'
@@ -6,6 +7,7 @@ import { schoolCRUD, athleteCRUD } from '@/lib/crud-operations'
 interface School {
   id: string
   name: string
+  state?: string
   created_at: string
 }
 
@@ -25,7 +27,7 @@ interface Props {
   }
 }
 
-export default function IndividualSchoolPage({ params }: Props) {
+export default function SchoolPage({ params }: Props) {
   const [school, setSchool] = useState<School | null>(null)
   const [athletes, setAthletes] = useState<Athlete[]>([])
   const [loading, setLoading] = useState(true)
@@ -82,13 +84,10 @@ export default function IndividualSchoolPage({ params }: Props) {
     return matchesSearch && matchesGender && matchesGradYear
   })
 
-  // Sort athletes by graduation year (newest first), then by last name
-  const sortedAthletes = filteredAthletes.sort((a, b) => {
-    if (a.graduation_year !== b.graduation_year) {
-      return (b.graduation_year || 0) - (a.graduation_year || 0)
-    }
-    return a.last_name.localeCompare(b.last_name)
-  })
+  // Sort athletes by last name
+  const sortedAthletes = filteredAthletes.sort((a, b) => 
+    a.last_name.localeCompare(b.last_name)
+  )
 
   // Pagination
   const totalPages = Math.ceil(sortedAthletes.length / athletesPerPage)
@@ -102,15 +101,15 @@ export default function IndividualSchoolPage({ params }: Props) {
 
   const getClassYear = (gradYear: number) => {
     if (!gradYear) return 'N/A'
-    return `'${gradYear.toString().slice(-2)}`
+    return gradYear.toString()
   }
 
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
-          <div className="text-xl font-semibold mb-2">Loading School Athletes...</div>
-          <div className="text-gray-600">Getting athlete information...</div>
+          <div className="text-xl font-semibold mb-2">Loading School...</div>
+          <div className="text-gray-600">Getting athlete roster...</div>
         </div>
       </div>
     )
@@ -162,14 +161,35 @@ export default function IndividualSchoolPage({ params }: Props) {
                 </div>
               </div>
             </div>
-            <div className="flex space-x-2">
+          </div>
+        </div>
+
+        {/* Navigation Tabs */}
+        <div className="bg-white rounded-lg shadow mb-6">
+          <div className="border-b border-gray-200">
+            <nav className="flex">
+              <div className="px-6 py-4 text-sm font-medium text-blue-600 border-b-2 border-blue-600">
+                Athletes
+              </div>
+              <a 
+                href={`/schools/${school.id}/records`}
+                className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
+              >
+                Records & PRs
+              </a>
               <a 
                 href={`/schools/${school.id}/results`}
-                className="bg-gray-600 text-white px-4 py-2 rounded hover:bg-gray-700 transition-colors"
+                className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
               >
-                View School Results
+                Season Results
               </a>
-            </div>
+              <a 
+                href={`/schools/${school.id}/team-selection`}
+                className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
+              >
+                Team Selection
+              </a>
+            </nav>
           </div>
         </div>
 
@@ -254,7 +274,7 @@ export default function IndividualSchoolPage({ params }: Props) {
         {/* Athletes Table */}
         <div className="bg-white rounded-lg shadow">
           <div className="p-6 border-b">
-            <h2 className="text-2xl font-bold text-black">School Athletes</h2>
+            <h2 className="text-2xl font-bold text-black">School Roster</h2>
           </div>
           
           {sortedAthletes.length === 0 ? (
@@ -283,7 +303,7 @@ export default function IndividualSchoolPage({ params }: Props) {
                           href={`/athletes/${athlete.id}`}
                           className="font-bold text-red-600 hover:text-red-800 transition-colors"
                         >
-                          {athlete.first_name} {athlete.last_name}
+                          {athlete.last_name}, {athlete.first_name}
                         </a>
                       </td>
                       <td className="py-3 px-4">
@@ -305,7 +325,7 @@ export default function IndividualSchoolPage({ params }: Props) {
                           href={`/athletes/${athlete.id}`}
                           className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
                         >
-                          View Results
+                          View Profile
                         </a>
                       </td>
                     </tr>
