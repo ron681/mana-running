@@ -140,7 +140,11 @@ export async function checkForDuplicateAthlete(
 
   if (exactMatch && exactMatch.length > 0) {
     const schoolMatch = exactMatch.find(athlete => 
-      normalizeSchoolName(athlete.schools?.name || '') === normalizedSchool
+      normalizeSchoolName(
+  Array.isArray(athlete.schools) 
+    ? athlete.schools[0]?.name || '' 
+    : athlete.schools?.name || ''
+) === normalizedSchool
     );
 
     if (schoolMatch) {
