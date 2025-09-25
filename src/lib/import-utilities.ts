@@ -160,7 +160,7 @@ const schoolMatch = exactMatch.find(athlete => {
     return {
       isDuplicate: true,
       existingAthleteId: exactMatch[0].id,
-      conflictReason: `Same athlete found at different school: ${Array.isArray(exactMatch[0].schools) ? exactMatch[0].schools[0]?.name : exactMatch[0].schools?.name}`
+conflictReason: `Same athlete found at different school: ${(exactMatch[0] as any).schools?.[0]?.name || 'Unknown School'}`
     };
   }
 
