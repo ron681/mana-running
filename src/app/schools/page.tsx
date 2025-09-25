@@ -1,14 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { schoolCRUD, athleteCRUD } from '@/lib/crud-operations'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 interface School {
   id: string
   name: string
   created_at: string
-  athlete_count?: number
-  recent_results_count?: number
 }
 
 export default function SchoolsPage() {
@@ -19,6 +17,8 @@ export default function SchoolsPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const schoolsPerPage = 20
 
+  const supabase = createClientComponentClient()
+
   useEffect(() => {
     loadSchools()
   }, [])
@@ -28,41 +28,23 @@ export default function SchoolsPage() {
       setLoading(true)
       setError(null)
 
-      // Get all schools
-      const allSchools = await schoolCRUD.getAll()
-      
-      if (allSchools) {
-        // Get athlete counts for each school
-        const schoolsWithCounts = await Promise.all(
-          allSchools.map(async (school) => {
-            try {
-              // Count athletes for this school
-              const athletes = await athleteCRUD.getAll()
-              const athleteCount = athletes?.filter(athlete => 
-                athlete.current_school_id === school.id
-              ).length || 0
+      // SUPER FAST: Just get schools, no counts needed
+      const { data: schoolsData, error: schoolsError } = await supabase
+        .from('schools')
+        .select(`
+          id,
+          name,
+          created_at
+        `)
+        .order('name', { ascending: true })
 
-              return {
-                ...school,
-                athlete_count: athleteCount
-              }
-            } catch (err) {
-              console.error(`Error getting athlete count for ${school.name}:`, err)
-              return {
-                ...school,
-                athlete_count: 0
-              }
-            }
-          })
-        )
-
-        // Sort by name
-        const sortedSchools = schoolsWithCounts.sort((a, b) => 
-          a.name.localeCompare(b.name)
-        )
-        
-        setSchools(sortedSchools)
+      if (schoolsError) {
+        throw schoolsError
       }
+
+      const schools: School[] = schoolsData || []
+
+      setSchools(schools)
     } catch (err) {
       console.error('Error loading schools:', err)
       setError('Failed to load schools')
@@ -162,7 +144,6 @@ export default function SchoolsPage() {
                 <thead>
                   <tr className="border-b text-left bg-gray-50">
                     <th className="py-3 px-4 font-bold text-black">School Name</th>
-                    <th className="py-3 px-4 font-bold text-black">Athletes</th>
                     <th className="py-3 px-4 font-bold text-black">Actions</th>
                   </tr>
                 </thead>
@@ -178,25 +159,12 @@ export default function SchoolsPage() {
                         </a>
                       </td>
                       <td className="py-4 px-4">
-                        <div className="flex items-center space-x-4">
-                          <span className="px-3 py-1 rounded text-sm font-semibold bg-red-100 text-red-800">
-                            {school.athlete_count || 0} athletes
-                          </span>
-                        </div>
-                      </td>
-                      <td className="py-4 px-4">
                         <div className="flex space-x-2">
                           <a 
                             href={`/schools/${school.id}`}
                             className="bg-red-600 text-white px-3 py-1 rounded text-sm hover:bg-red-700 transition-colors"
                           >
-                            View Athletes
-                          </a>
-                          <a 
-                            href={`/schools/${school.id}/results`}
-                            className="bg-gray-600 text-white px-3 py-1 rounded text-sm hover:bg-gray-700 transition-colors"
-                          >
-                            View Results
+                            View School
                           </a>
                         </div>
                       </td>
