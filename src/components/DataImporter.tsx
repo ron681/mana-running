@@ -374,7 +374,7 @@ const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData
 
     const meetData = {
       name: meetInfo.name,
-      meet_date: meetInfo.date,
+      date: meetInfo.date,
       meet_type: meetType,
       course_id: courseData.id
     };
