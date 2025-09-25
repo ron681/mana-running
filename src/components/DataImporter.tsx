@@ -628,11 +628,14 @@ const handleCourseSelection = async (course: any) => {
       const finalDifficulty = (isNaN(difficulty) || difficulty < 0.5 || difficulty > 2.0) ? 1.0 : difficulty;
       
       // Clean course creation - only essential fields
-      const courseData = {
-        name: finalCourseName, // Ensure this is never empty
-        distance_meters: Math.round(meetInfo.distanceMeters),
-        difficulty_rating: finalDifficulty
-      };
+const rating = (finalDifficulty * 4747) / Math.round(meetInfo.distanceMeters);
+
+const courseData = {
+  name: finalCourseName, // Ensure this is never empty
+  distance_meters: Math.round(meetInfo.distanceMeters),
+  difficulty_rating: finalDifficulty,
+  rating: rating  // Add calculated rating
+};
       
       console.log('Course data being sent:', courseData);
       
