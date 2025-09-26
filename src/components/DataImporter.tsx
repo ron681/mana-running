@@ -464,32 +464,111 @@ const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData
       message: 'Setting up race categories' 
     });
 
-    // Group data by race category and gender
-    const raceGroups = new Map();
-    for (const row of data) {
-      const raceKey = `${row.Race}_${row.Gender}`;
-      if (!raceGroups.has(raceKey)) {
-        raceGroups.set(raceKey, []);
+// Group data by race category, gender, AND course
+const raceGroups = new Map();
+const coursesNeeded = new Set();
+
+// First pass: identify all courses needed
+for (const row of data) {
+  if (row.course_name) {
+    coursesNeeded.add(row.course_name.trim());
+  }
+}
+
+// Create/find all needed courses
+const courseMap = new Map();
+for (const courseName of coursesNeeded) {
+  const cleanedCourseName = courseName
+    .replace(/\s*\|\s*[\d.]+\s*(miles?|mi|k|km|m|meters?)\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  // Check if course exists
+  const existingCourse = await courseCRUD.getAll().then(courses => 
+    courses.find(c => c.name.toLowerCase().includes(cleanedCourseName.toLowerCase()))
+  );
+
+  if (existingCourse) {
+    courseMap.set(courseName, existingCourse);
+    console.log(`Using existing course: ${existingCourse.name} for ${courseName}`);
+  } else {
+    // Create new course with user input
+    const mileDifficultyInput = prompt(
+      `New course detected: "${cleanedCourseName}"\n\n` +
+      `Enter mile difficulty rating:\n` +
+      `• 1.0 - 1.3 typical range`,
+      '1.1'
+    );
+    
+    const mileDifficulty = parseFloat(mileDifficultyInput || '1.1');
+    const finalMileDifficulty = (isNaN(mileDifficulty) || mileDifficulty < 0.8 || mileDifficulty > 2.0) 
+      ? 1.1 : mileDifficulty;
+
+    // Detect distance from course name or race data
+    let distanceMeters = 5000; // default
+    const distanceMatch = courseName.match(/(\d+(?:\.\d+)?)\s*(mile|k|km|m)/i);
+    if (distanceMatch) {
+      const value = parseFloat(distanceMatch[1]);
+      const unit = distanceMatch[2].toLowerCase();
+      if (unit.includes('mile')) {
+        distanceMeters = value * 1609.344;
+      } else if (unit === 'k' || unit === 'km') {
+        distanceMeters = value * 1000;
+      } else {
+        distanceMeters = value;
       }
-      raceGroups.get(raceKey).push(row);
     }
 
-    // Create race records
-    const raceMap = new Map();
-    for (const [raceKey, participants] of raceGroups) {
-      const [raceCategory, gender] = raceKey.split('_');
-      
-      const race = await raceCRUD.create({
-        meet_id: meet.id,
-        name: `${raceCategory} ${gender}`,
-        category: raceCategory,
-        gender: gender === 'Boys' ? 'M' : 'F',
-        course_id: courseData.id,
-        total_participants: participants.length
-      });
-      
-      raceMap.set(raceKey, race);
+    const xcTimeRating = (4409.603 / distanceMeters) * (1.17747004342738 / finalMileDifficulty);
+    const distanceMiles = distanceMeters / 1609.344;
+
+    const newCourse = await supabase
+      .from('courses')
+      .insert({
+        name: cleanedCourseName,
+        distance_meters: Math.round(distanceMeters),
+        distance_miles: Math.round(distanceMiles * 100) / 100,
+        mile_difficulty: finalMileDifficulty,
+        xc_time_rating: Math.round(xcTimeRating * 100000) / 100000,
+        rating_confidence: 0.5
+      })
+      .select()
+      .single();
+
+    if (newCourse.data) {
+      courseMap.set(courseName, newCourse.data);
+      console.log(`Created new course: ${cleanedCourseName}`);
     }
+  }
+}
+
+// Group data by race category, gender, and course
+for (const row of data) {
+  const courseName = row.course_name || 'default';
+  const raceKey = `${row.Race}_${row.Gender}_${courseName}`;
+  if (!raceGroups.has(raceKey)) {
+    raceGroups.set(raceKey, []);
+  }
+  raceGroups.get(raceKey).push(row);
+}
+
+// Create race records with correct course assignments
+const raceMap = new Map();
+for (const [raceKey, participants] of raceGroups) {
+  const [raceCategory, gender, courseName] = raceKey.split('_');
+  const course = courseMap.get(courseName) || courseData; // fallback to original course
+  
+  const race = await raceCRUD.create({
+    meet_id: meet.id,
+    name: `${raceCategory} ${gender} - ${course.name}`,
+    category: raceCategory,
+    gender: gender === 'Boys' ? 'M' : 'F',
+    course_id: course.id,
+    total_participants: participants.length
+  });
+  
+  raceMap.set(raceKey, race);
+}    
 
     // Stage 5: Get existing data
     setProgress({ 
