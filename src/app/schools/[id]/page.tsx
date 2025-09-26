@@ -178,6 +178,12 @@ export default function SchoolPage({ params }: Props) {
                 Records & PRs
               </a>
               <a 
+                href={`/schools/${school.id}/seasons`}
+                className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
+              >
+                Season History
+              </a>
+              <a 
                 href={`/schools/${school.id}/results`}
                 className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
               >
