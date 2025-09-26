@@ -48,6 +48,7 @@ interface ParsedData {
   School: string;
   Race: string;
   Gender: string;
+  course_name?: string;  // Add this field
 }
 
 interface MeetInfo {
@@ -122,29 +123,16 @@ const parseCSV = (file: File): Promise<ParsedData[]> => {
         
         try {
           // Map columns to standardized format
-          const mappedData = results.data.map((row: any) => {
-            const mapped: ParsedData = {
-              Place: row.Place || row.place || row.Position || 0,
-              Grade: parseInt(row.grade || row.Grade) || 12,
-              Athlete: row.Athlete || row.athlete || `${row.first_name || ''} ${row.last_name || ''}`.trim() || '',
-              Duration: row.Duration || row.time || row.Time || row['Finish Time'] || '',
-              School: row.School || row.school_name || row.Team || '',
-              Race: row.Race || row.race || row.Category || 'Varsity',
-              Gender: ''
-            };
-
-            // Handle gender conversion
-            let genderValue = row.Gender || row.gender || '';
-            if (genderValue.toLowerCase() === 'boys' || genderValue === 'M') {
-              mapped.Gender = 'Boys';
-            } else if (genderValue.toLowerCase() === 'girls' || genderValue === 'F') {
-              mapped.Gender = 'Girls';
-            } else {
-              mapped.Gender = 'Boys'; // Default
-            }
-
-            return mapped;
-          });
+          const mapped: ParsedData = {
+  Place: row.Place || row.place || row.Position || 0,
+  Grade: parseInt(row.grade || row.Grade) || 12,
+  Athlete: row.Athlete || row.athlete || `${row.first_name || ''} ${row.last_name || ''}`.trim() || '',
+  Duration: row.Duration || row.time || row.Time || row['Finish Time'] || '',
+  School: row.School || row.school_name || row.Team || '',
+  Race: row.Race || row.race || row.Category || 'Varsity',
+  Gender: '',
+  course_name: row.course_name || row.Course || row.Location || row.Venue || '' // Add this line
+};
           
           // Filter valid rows
           const cleanedData = mappedData.filter(row => 
