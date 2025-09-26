@@ -231,7 +231,7 @@ function calculateTeamPerformances(results: any[]): TeamPerformance[] {
 
   const teamPerformances: TeamPerformance[] = [];
 
-  for (const [meetKey, meetResults] of Object.entries(meetGroups)) {
+  for (const [meetKey, meetResults] of Object.entries(meetGroups) as [string, any[]][]) {
     const boysResults = meetResults.filter((r: any) => r.gender === 'Boys');
     const girlsResults = meetResults.filter((r: any) => r.gender === 'Girls');
 
