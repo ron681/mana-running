@@ -556,11 +556,42 @@ const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData
       const school = schoolMap.get(row.School.trim());
       const athleteKey = `${firstName}_${lastName}_${school.id}`;
       
-      let athlete = existingAthletes.find(a => 
-        a.first_name.toLowerCase() === firstName.toLowerCase() &&
-        a.last_name.toLowerCase() === lastName.toLowerCase() &&
-        a.current_school_id === school.id
-      );
+      // Enhanced duplicate detection with graduation year
+const graduationYear = calculateGraduationYear(row.Grade || 12, new Date(meetInfo.date));
+
+let athlete = existingAthletes.find(a => 
+  a.first_name.toLowerCase() === firstName.toLowerCase() &&
+  a.last_name.toLowerCase() === lastName.toLowerCase() &&
+  a.current_school_id === school.id &&
+  a.graduation_year === graduationYear  // Add graduation year check
+);
+
+// If no exact match, check for name + school match with different graduation year
+if (!athlete) {
+  const nameSchoolMatches = existingAthletes.filter(a => 
+    a.first_name.toLowerCase() === firstName.toLowerCase() &&
+    a.last_name.toLowerCase() === lastName.toLowerCase() &&
+    a.current_school_id === school.id
+  );
+
+  if (nameSchoolMatches.length > 0) {
+    // Found same name/school but different graduation year
+    console.warn(`Potential athlete conflict: ${firstName} ${lastName} at ${school.name}`, {
+      existing: nameSchoolMatches.map(a => ({id: a.id, gradYear: a.graduation_year})),
+      new: {gradYear: graduationYear, grade: row.Grade}
+    });
+    
+    // Use the existing athlete if graduation years are close (within 1 year)
+    const closeMatch = nameSchoolMatches.find(a => 
+      Math.abs(a.graduation_year - graduationYear) <= 1
+    );
+    
+    if (closeMatch) {
+      athlete = closeMatch;
+      console.log(`Using existing athlete with close graduation year: ${closeMatch.graduation_year} vs ${graduationYear}`);
+    }
+  }
+};
 
       if (!athlete) {
         const graduationYear = calculateGraduationYear(
