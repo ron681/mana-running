@@ -227,13 +227,13 @@ function calculateTeamPerformances(results: any[]): TeamPerformance[] {
     }
     acc[meetKey].push(result);
     return acc;
-  }, {} as Record<string, typeof results>);
+  }, {} as Record<string, any[]>);
 
   const teamPerformances: TeamPerformance[] = [];
 
   for (const [meetKey, meetResults] of Object.entries(meetGroups)) {
-    const boysResults = meetResults.filter(r => r.gender === 'Boys');
-    const girlsResults = meetResults.filter(r => r.gender === 'Girls');
+    const boysResults = meetResults.filter((r: any) => r.gender === 'Boys');
+    const girlsResults = meetResults.filter((r: any) => r.gender === 'Girls');
 
     const boysTeam = calculateTeamScore(boysResults);
     const girlsTeam = calculateTeamScore(girlsResults);
@@ -278,7 +278,7 @@ function getSeasonBests(results: any[]): any[] {
     }
     acc[athleteId].push(result);
     return acc;
-  }, {} as Record<string, typeof results>);
+  }, {} as Record<string, any[]>);
 
   const seasonBests = [];
   for (const [athleteId, athleteResults] of Object.entries(athleteGroups)) {
@@ -331,7 +331,7 @@ function getTopPerformers(results: any[], limit: number): AthleteSeasonResult[] 
     }
     acc[athleteId].push(result);
     return acc;
-  }, {} as Record<number, typeof results>);
+  }, {} as Record<number, any[]>);
 
   // Calculate best performance for each athlete
   const performers: AthleteSeasonResult[] = [];
