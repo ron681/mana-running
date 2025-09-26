@@ -103,8 +103,7 @@ export default function EnhancedDataImporter() {
   const [dataPreview, setDataPreview] = useState<ParsedData[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Parse CSV file
-  // Parse CSV file with flexible column mapping
+// Parse CSV file with flexible column mapping
 const parseCSV = (file: File): Promise<ParsedData[]> => {
   return new Promise((resolve, reject) => {
     Papa.parse(file, {
@@ -123,16 +122,30 @@ const parseCSV = (file: File): Promise<ParsedData[]> => {
         
         try {
           // Map columns to standardized format
-          const mapped: ParsedData = {
-  Place: row.Place || row.place || row.Position || 0,
-  Grade: parseInt(row.grade || row.Grade) || 12,
-  Athlete: row.Athlete || row.athlete || `${row.first_name || ''} ${row.last_name || ''}`.trim() || '',
-  Duration: row.Duration || row.time || row.Time || row['Finish Time'] || '',
-  School: row.School || row.school_name || row.Team || '',
-  Race: row.Race || row.race || row.Category || 'Varsity',
-  Gender: '',
-  course_name: row.course_name || row.Course || row.Location || row.Venue || '' // Add this line
-};
+          const mappedData = results.data.map((row: any) => {
+            const mapped: ParsedData = {
+              Place: row.Place || row.place || row.Position || 0,
+              Grade: parseInt(row.grade || row.Grade) || 12,
+              Athlete: row.Athlete || row.athlete || `${row.first_name || ''} ${row.last_name || ''}`.trim() || '',
+              Duration: row.Duration || row.time || row.Time || row['Finish Time'] || '',
+              School: row.School || row.school_name || row.Team || '',
+              Race: row.Race || row.race || row.Category || 'Varsity',
+              Gender: '',
+              course_name: row.course_name || row.Course || row.Location || row.Venue || ''
+            };
+
+            // Handle gender conversion
+            let genderValue = row.Gender || row.gender || '';
+            if (genderValue.toLowerCase() === 'boys' || genderValue === 'M') {
+              mapped.Gender = 'Boys';
+            } else if (genderValue.toLowerCase() === 'girls' || genderValue === 'F') {
+              mapped.Gender = 'Girls';
+            } else {
+              mapped.Gender = 'Boys'; // Default
+            }
+
+            return mapped;
+          });
           
           // Filter valid rows
           const cleanedData = mappedData.filter(row => 
