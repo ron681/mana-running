@@ -173,11 +173,10 @@ const parseCSV = (file: File): Promise<ParsedData[]> => {
       console.log('Courses retrieved:', courses.length, 'courses');
       
     // Clean course name - remove distance indicators
-for (const courseName of coursesNeeded) {
-  const cleanedCourseName = (courseName as string)
-    .replace(/\s*\|\s*[\d.]+\s*(miles?|mi|k|km|m|meters?)\s*/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
+const cleanedCourseName = meetInfo.courseName
+  .replace(/\s*\|\s*[\d.]+\s*(miles?|mi|k|km|m|meters?)\s*/gi, '')
+  .replace(/\s+/g, ' ')
+  .trim();
   
 const baseName = cleanedCourseName.replace(' Park', '').toLowerCase();
 console.log(`Course name cleaned: "${meetInfo.courseName}" → "${cleanedCourseName}"`);
@@ -466,15 +465,31 @@ const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData
       message: 'Setting up race categories' 
     });
 
-// Group data by race category, gender, AND course
+// Group data by race category and gender (simplified)
 const raceGroups = new Map();
-const coursesNeeded = new Set<string>();
-
-// First pass: identify all courses needed
 for (const row of data) {
-  if (row.course_name) {
-    coursesNeeded.add(row.course_name.trim());
+  const raceKey = `${row.Race}_${row.Gender}`;
+  if (!raceGroups.has(raceKey)) {
+    raceGroups.set(raceKey, []);
   }
+  raceGroups.get(raceKey).push(row);
+}
+
+// Create race records
+const raceMap = new Map();
+for (const [raceKey, participants] of raceGroups) {
+  const [raceCategory, gender] = raceKey.split('_');
+  
+  const race = await raceCRUD.create({
+    meet_id: meet.id,
+    name: `${raceCategory} ${gender}`,
+    category: raceCategory,
+    gender: gender === 'Boys' ? 'M' : 'F',
+    course_id: courseData.id,
+    total_participants: participants.length
+  });
+  
+  raceMap.set(raceKey, race);
 }
 
 // Create/find all needed courses
@@ -715,8 +730,9 @@ if (!athlete) {
       if (athlete) {
         const timeInSeconds = timeToSeconds(row.Duration);
         
-        if (timeInSeconds > 0) {
-          const raceKey = `${row.Race}_${row.Gender}`;
+       if (timeInSeconds > 0) {
+          const courseName = row.course_name || 'default';
+          const raceKey = `${row.Race}_${row.Gender}_${courseName}`;  // ← FIX THIS
           const race = raceMap.get(raceKey);
 
           const resultData = {
