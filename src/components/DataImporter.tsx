@@ -173,10 +173,11 @@ const parseCSV = (file: File): Promise<ParsedData[]> => {
       console.log('Courses retrieved:', courses.length, 'courses');
       
     // Clean course name - remove distance indicators
-const cleanedCourseName = meetInfo.courseName
-  .replace(/\s*\|\s*[\d.]+\s*(miles?|mi|k|km|m|meters?)\s*/gi, '')
-  .replace(/\s+/g, ' ')
-  .trim();
+for (const courseName of coursesNeeded) {
+  const cleanedCourseName = (courseName as string)
+    .replace(/\s*\|\s*[\d.]+\s*(miles?|mi|k|km|m|meters?)\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
   
 const baseName = cleanedCourseName.replace(' Park', '').toLowerCase();
 console.log(`Course name cleaned: "${meetInfo.courseName}" → "${cleanedCourseName}"`);
@@ -467,7 +468,7 @@ const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData
 
 // Group data by race category, gender, AND course
 const raceGroups = new Map();
-const coursesNeeded = new Set();
+const coursesNeeded = new Set<string>();
 
 // First pass: identify all courses needed
 for (const row of data) {
