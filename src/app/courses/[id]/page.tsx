@@ -8,7 +8,8 @@ interface Course {
   name: string
   distance_meters: number
   distance_miles: number
-  difficulty_rating: number
+  mile_difficulty: number          // NEW: How hard vs 1-mile track
+  xc_time_rating: number          // NEW: For XC time conversion
   rating_confidence: string
   total_results_count: number
 }
@@ -112,18 +113,19 @@ export default function IndividualCoursePage({ params }: Props) {
     })
   }
 
-  const getDifficultyColor = (rating: number) => {
-    if (rating >= 1.0) return 'bg-red-100 text-red-800'
-    if (rating >= 0.5) return 'bg-yellow-100 text-yellow-800'
-    if (rating >= 0.0) return 'bg-green-100 text-green-800'
-    return 'bg-gray-100 text-gray-800'
+  // Updated difficulty colors and labels for mile_difficulty (vs 1-mile track baseline)
+  const getDifficultyColor = (mileDifficulty: number) => {
+    if (mileDifficulty >= 1.20) return 'bg-red-100 text-red-800'      // Very Hard (20%+ harder than track mile)
+    if (mileDifficulty >= 1.15) return 'bg-orange-100 text-orange-800' // Hard (15-20% harder)
+    if (mileDifficulty >= 1.05) return 'bg-yellow-100 text-yellow-800' // Moderate (5-15% harder)
+    return 'bg-green-100 text-green-800'                               // Fast/Easy (< 5% harder)
   }
 
-  const getDifficultyLabel = (rating: number) => {
-    if (rating >= 1.0) return 'Very Hard'
-    if (rating >= 0.5) return 'Moderate'
-    if (rating >= 0.0) return 'Easy'
-    return 'Unknown'
+  const getDifficultyLabel = (mileDifficulty: number) => {
+    if (mileDifficulty >= 1.20) return 'Very Hard'
+    if (mileDifficulty >= 1.15) return 'Hard'  
+    if (mileDifficulty >= 1.05) return 'Moderate'
+    return 'Fast'
   }
 
   // Pagination for current tab
@@ -180,7 +182,7 @@ export default function IndividualCoursePage({ params }: Props) {
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-3xl font-bold text-black mb-4">{course.name}</h1>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                 <div>
                   <span className="text-gray-600">Distance:</span>
                   <div className="font-bold text-black">
@@ -191,20 +193,39 @@ export default function IndividualCoursePage({ params }: Props) {
                   </div>
                 </div>
                 <div>
-                  <span className="text-gray-600">Difficulty:</span>
+                  <span className="text-gray-600">Difficulty vs Track Mile:</span>
                   <div className="mt-1">
-                    {course.difficulty_rating !== null ? (
+                    {course.mile_difficulty !== null ? (
                       <div className="flex flex-col space-y-1">
-                        <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.difficulty_rating)} inline-block w-fit`}>
-                          {getDifficultyLabel(course.difficulty_rating)}
+                        <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.mile_difficulty)} inline-block w-fit`}>
+                          {getDifficultyLabel(course.mile_difficulty)}
                         </span>
                         <span className="text-xs text-gray-500">
-                          Rating: {course.difficulty_rating.toFixed(3)}
+                          {course.mile_difficulty.toFixed(3)}x vs track mile
                         </span>
                       </div>
                     ) : (
                       <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
                         Not Rated
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-gray-600">XC Time Rating:</span>
+                  <div className="mt-1">
+                    {course.xc_time_rating !== null ? (
+                      <div className="flex flex-col space-y-1">
+                        <span className="px-2 py-1 rounded text-sm font-semibold bg-blue-100 text-blue-800 inline-block w-fit">
+                          {course.xc_time_rating.toFixed(3)}
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Crystal Springs conversion
+                        </span>
+                      </div>
+                    ) : (
+                      <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
+                        No Rating
                       </span>
                     )}
                   </div>
@@ -219,6 +240,21 @@ export default function IndividualCoursePage({ params }: Props) {
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Rating Explanation */}
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+          <div className="flex items-start space-x-3">
+            <div className="flex-shrink-0">
+              <svg className="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd" />
+              </svg>
+            </div>
+            <div className="text-sm text-blue-800">
+              <strong>Rating System:</strong> The difficulty rating shows how much harder this course is compared to a 1-mile track race. 
+              For example, 1.125 means 12.5% harder than track mile. The XC Time Rating converts times to Crystal Springs 2.95-mile equivalents for fair comparison across courses.
             </div>
           </div>
         </div>
@@ -329,7 +365,8 @@ export default function IndividualCoursePage({ params }: Props) {
                 <div className="text-center py-12">
                   <div className="text-gray-500 mb-4">Results data coming soon.</div>
                   <div className="text-sm text-gray-400">
-                    This feature will show all individual race results from every meet held on this course.
+                    This feature will show all individual race results from every meet held on this course,
+                    with XC Time equivalents for fair performance comparison.
                   </div>
                 </div>
               </div>

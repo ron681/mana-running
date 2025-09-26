@@ -1,6 +1,5 @@
-// lib/crud-operations.ts - Complete CRUD Operations for Mana Running
+// lib/crud-operations.ts - Updated for new rating system
 
-// Import your existing supabase client
 import { supabase } from './supabase';
 
 // ==================== ATHLETE CRUD OPERATIONS ====================
@@ -56,33 +55,27 @@ export const athleteCRUD = {
     return data;
   },
 
-
-  
-  
   async update(id: string, updates: Partial<{
-  first_name: string;
-  last_name: string;
-  graduation_year: number;
-  gender: string;
-  current_school_id: string;
-}>) {
-  const { data, error } = await supabase
-    .from('athletes')
-    .update(updates)
-    .eq('id', id)
-    .select(`
-      *,
-      school:schools(name)
-    `)
-    .single();
-  
-  if (error) throw error;
-  return data;
-}
+    first_name: string;
+    last_name: string;
+    graduation_year: number;
+    gender: string;
+    current_school_id: string;
+  }>) {
+    const { data, error } = await supabase
+      .from('athletes')
+      .update(updates)
+      .eq('id', id)
+      .select(`
+        *,
+        school:schools(name)
+      `)
+      .single();
+    
+    if (error) throw error;
+    return data;
+  }
 };
-
-
-
 
 // ==================== SCHOOL CRUD OPERATIONS ====================
 
@@ -104,24 +97,24 @@ export const schoolCRUD = {
 export const meetCRUD = {
   // GET: Fetch all meets with course and result count
   async getAll() {
-  const { data, error } = await supabase
-    .from('meets')
-    .select(`
-      *,
-      races(
-        id,
-        name,
-        category,
-        gender,
-        total_participants,
-        course:courses(name)
-      )
-    `)
-    .order('meet_date', { ascending: false });
-  
-  if (error) throw error;
-  return data;
-},
+    const { data, error } = await supabase
+      .from('meets')
+      .select(`
+        *,
+        races(
+          id,
+          name,
+          category,
+          gender,
+          total_participants,
+          course:courses(name)
+        )
+      `)
+      .order('meet_date', { ascending: false });
+    
+    if (error) throw error;
+    return data;
+  },
 
   // GET: Fetch meet by ID with all results
   async getById(id: string) {
@@ -218,7 +211,7 @@ export const meetCRUD = {
 // ==================== COURSE CRUD OPERATIONS ====================
 
 export const courseCRUD = {
-  // GET: Fetch all courses with meet count and proper rating handling
+  // GET: Fetch all courses with NEW rating system columns
   async getAll() {
     const { data, error } = await supabase
       .from('courses')
@@ -228,8 +221,8 @@ export const courseCRUD = {
         name,
         distance_meters,
         distance_miles,
-        difficulty_rating,
-        rating,
+        mile_difficulty,
+        xc_time_rating,
         rating_confidence,
         rating_last_updated,
         total_results_count,
@@ -241,10 +234,7 @@ export const courseCRUD = {
     
     return data?.map(course => ({
       ...course,
-      meets_count: course.meets[0]?.count || 0,
-      // Helper property for display - prefers calculated rating
-      display_rating: course.rating ?? course.difficulty_rating ?? 0,
-      has_calculated_rating: course.rating !== null && course.rating !== undefined
+      meets_count: course.meets[0]?.count || 0
     }));
   },
 
@@ -286,13 +276,14 @@ export const courseCRUD = {
     return data;
   },
 
-  // PUT: Update course
+  // PUT: Update course with NEW rating system
   async update(id: string, updates: Partial<{
     name: string;
     distance: string;
     surface_type: string;
-    difficulty_rating: number;
-    rating: number; // Add calculated rating updates
+    mile_difficulty: number;     // NEW: How hard vs 1-mile track
+    xc_time_rating: number;      // NEW: For XC time conversion
+    rating_confidence: string;
   }>) {
     const { data, error } = await supabase
       .from('courses')
@@ -336,7 +327,7 @@ export const resultCRUD = {
       .from('results')
       .select(`
         *,
-        athlete:athletes(first_name, last_name, graduation_year, school:schools(name))
+        athlete:athletes(first_name, last_name, graduation_year, school:schools(name)),
         meet:meets(name, meet_date, course:courses(name))
       `)
       .order('meet_id', { ascending: false });
@@ -346,6 +337,7 @@ export const resultCRUD = {
   },
 
   // GET: Fetch detailed results with all calculated fields (for your page)
+  // NOTE: This will need the updated view with mile_difficulty and xc_time_rating
   async getAllWithDetails() {
     const { data, error } = await supabase
       .from('results_with_details')
@@ -437,8 +429,6 @@ export const resultCRUD = {
     if (error) throw error;
     return true;
   },
-
-  // ADD THESE THREE NEW FUNCTIONS HERE:
   
   // GET: Search results across entire database
   async searchAllResults(searchQuery = '', limit = 5000) {
@@ -481,6 +471,7 @@ export const resultCRUD = {
     return count;
   }
 };
+
 // ==================== RACE CRUD OPERATIONS ====================
 
 export const raceCRUD = {

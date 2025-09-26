@@ -13,20 +13,12 @@ import {
   formatTime 
 } from '@/lib/timeConverter'
 
-
-
-
-
 interface Stats {
   schools: number
   athletes: number
   courses: number
   results: number
 }
-
-
-
-
 
 interface RecentMeet {
   id: string
@@ -133,7 +125,7 @@ export default function Home() {
         const now = new Date()
         const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000))
         
-        // Calculate big movers (XC time improvements)
+        // Calculate big movers (XC time improvements using NEW rating system)
         const bigMoverResults = calculateBigMovers(allResults, thirtyDaysAgo)
         setBigMovers(bigMoverResults)
 
@@ -198,12 +190,19 @@ export default function Home() {
   const calculateBigMovers = (allResults: any[], cutoffDate: Date): { boys: BigMover[], girls: BigMover[] } => {
     const athleteResults = new Map<string, any[]>()
     
+    // Group results by athlete and calculate XC Time for each result using NEW rating system
     allResults.forEach(result => {
-      if (result.athlete_id && result.normalized_time_seconds > 0) {
+      if (result.athlete_id && result.time_seconds > 0 && result.xc_time_rating) {
+        // Calculate XC Time using new rating system (direct multiplier)
+        const xcTime = result.time_seconds * result.xc_time_rating
+        
         if (!athleteResults.has(result.athlete_id)) {
           athleteResults.set(result.athlete_id, [])
         }
-        athleteResults.get(result.athlete_id)!.push(result)
+        athleteResults.get(result.athlete_id)!.push({
+          ...result,
+          xc_time_seconds: xcTime  // Store calculated XC Time
+        })
       }
     })
 
@@ -226,13 +225,14 @@ export default function Home() {
 
       if (historicalResults.length === 0) return
 
-      const oldPR = Math.min(...historicalResults.map(r => r.normalized_time_seconds))
+      // Use XC Time for fair comparison across courses
+      const oldPR = Math.min(...historicalResults.map(r => r.xc_time_seconds))
 
       const bestRecentResult = recentResults.reduce((best, current) => 
-        current.normalized_time_seconds < best.normalized_time_seconds ? current : best
+        current.xc_time_seconds < best.xc_time_seconds ? current : best
       )
 
-      const newPR = bestRecentResult.normalized_time_seconds
+      const newPR = bestRecentResult.xc_time_seconds
 
       if (newPR < oldPR) {
         const improvementPercentage = ((oldPR - newPR) / oldPR) * 100
@@ -257,14 +257,13 @@ export default function Home() {
 
     const girls = improvements
       .filter(mover => 
-        mover.gender === 'M' 
+        mover.gender === 'F'  // FIXED: Was filtering 'M' for both boys and girls
       )
       .sort((a, b) => b.improvement_percentage - a.improvement_percentage)
       .slice(0, 5)
 
     return { boys, girls }
   }
-
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -501,7 +500,7 @@ export default function Home() {
                 </div>
                 <div>
                   <h2 className="text-xl font-bold">Big Movers</h2>
-                  <p className="text-green-100 text-sm">Top improvements in the last 30 days</p>
+                  <p className="text-green-100 text-sm">Top XC Time improvements in the last 30 days</p>
                 </div>
               </div>
             </div>
@@ -533,37 +532,31 @@ export default function Home() {
                   )}
                 </div>
 
-
-{/* Girls Big Movers */}
-<div>
-  <h3 className="text-lg font-bold text-pink-700 mb-4 flex items-center">
-    <div className="w-2 h-2 bg-pink-600 rounded-full mr-2"></div>
-    Girls
-  </h3>
-  {bigMovers.girls.length === 0 ? (
-    <div className="text-center py-8">
-      <div className="text-slate-400 text-sm">No recent improvements</div>
-    </div>
-  ) : (
-    <div className="space-y-3">
-      {bigMovers.girls.map((mover, index) => (
-        <div key={index} className="flex justify-between items-center p-3 bg-gradient-to-r from-pink-50 to-green-50 rounded-lg border-l-4 border-green-500">
-          <div className="font-semibold text-slate-800 text-sm">
-            {mover.athlete.first_name} {mover.athlete.last_name}
-          </div>
-          <div className="font-bold text-green-600">
-            -{mover.improvement_percentage.toFixed(1)}%
-          </div>
-        </div>
-      ))}
-    </div>
-  )}
-</div>
-  
-
-
-
-
+                {/* Girls Big Movers */}
+                <div>
+                  <h3 className="text-lg font-bold text-pink-700 mb-4 flex items-center">
+                    <div className="w-2 h-2 bg-pink-600 rounded-full mr-2"></div>
+                    Girls
+                  </h3>
+                  {bigMovers.girls.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="text-slate-400 text-sm">No recent improvements</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {bigMovers.girls.map((mover, index) => (
+                        <div key={index} className="flex justify-between items-center p-3 bg-gradient-to-r from-pink-50 to-green-50 rounded-lg border-l-4 border-green-500">
+                          <div className="font-semibold text-slate-800 text-sm">
+                            {mover.athlete.first_name} {mover.athlete.last_name}
+                          </div>
+                          <div className="font-bold text-green-600">
+                            -{mover.improvement_percentage.toFixed(1)}%
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -658,7 +651,7 @@ export default function Home() {
                       <div key={index} className="group bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl p-4 border border-pink-100 hover:border-pink-200 transition-all duration-200">
                         <div className="flex justify-between items-center">
                           <div className="flex-1">
-                            <div className="font-bold text-slate-800 group-hover:text-pink-700 transition-colors">
+                            <div className="font-bold text-slate-slate-800 group-hover:text-pink-700 transition-colors">
                               {performance.athlete.first_name} {performance.athlete.last_name}
                             </div>
                             <div className="text-slate-500 text-sm truncate">

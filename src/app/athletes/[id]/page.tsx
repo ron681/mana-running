@@ -29,7 +29,8 @@ interface ResultWithDetails {
   meet_date: string
   course_name: string
   distance_miles: number
-  difficulty_rating: number
+  mile_difficulty: number      // NEW: How hard vs 1-mile track
+  xc_time_rating: number       // NEW: For XC time conversion
   school_name: string
   first_name: string
   last_name: string
@@ -72,7 +73,6 @@ function formatDate(dateString: string): string {
     year: 'numeric'
   })
 }
-
 
 function formatGraduationYear(year: number): string {
   // Ensure we always display full 4-digit year
@@ -130,7 +130,7 @@ export default function AthletePage({ params }: { params: { id: string } }) {
 
       setAthlete(fixedAthleteData)
 
-      // Get results using results_with_details view (same as homepage)
+      // Get results using results_with_details view (now includes mile_difficulty and xc_time_rating)
       const { data: resultsData, error: resultsError } = await supabase
         .from('results_with_details')
         .select('*')
@@ -167,9 +167,9 @@ export default function AthletePage({ params }: { params: { id: string } }) {
   const seasonProgression = results.filter(result => result.season_year === currentSeason)
     .sort((a, b) => new Date(a.meet_date).getTime() - new Date(b.meet_date).getTime())
   
-  // Calculate season stats using XC times
+  // Calculate season stats using NEW XC time formula (direct xc_time_rating multiplier)
   const seasonXcTimes = seasonProgression.map(result => {
-    return result.time_seconds * (3.1 / result.distance_miles) * (1 + (result.difficulty_rating - 3) * 0.02)
+    return result.time_seconds * result.xc_time_rating
   })
   
   const seasonStats = {
@@ -245,7 +245,7 @@ export default function AthletePage({ params }: { params: { id: string } }) {
         {/* Season Stats */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">{currentSeason} Season</h2>
-          <div className="text-xs text-gray-500 mb-3">XC equivalent times (normalized for course difficulty)</div>
+          <div className="text-xs text-gray-500 mb-3">XC equivalent times (Crystal Springs 2.95-mile standard)</div>
           <div className="grid grid-cols-2 gap-4">
             <div className="text-center p-3 bg-gray-50 rounded">
               <div className="text-2xl font-bold text-blue-600">{seasonStats.races}</div>
@@ -278,14 +278,14 @@ export default function AthletePage({ params }: { params: { id: string } }) {
         {/* Season Progression Chart */}
         <div className="bg-white rounded-lg shadow-md p-6">
           <h2 className="text-xl font-bold text-gray-900 mb-4">Season Progression</h2>
-          <div className="text-xs text-gray-500 mb-3">Times shown as XC equivalent (normalized for course difficulty)</div>
+          <div className="text-xs text-gray-500 mb-3">Times shown as XC equivalent (Crystal Springs 2.95-mile standard)</div>
           {seasonProgression.length > 0 ? (
             <div className="space-y-2">
               {seasonProgression.map((result, index) => {
-                // Calculate XC Time equivalent for 3.1 mile standard
-                const xcTime = result.time_seconds * (3.1 / result.distance_miles) * (1 + (result.difficulty_rating - 3) * 0.02)
-                
-                const isImprovement = index > 0 && xcTime < (seasonProgression[index - 1].time_seconds * (3.1 / seasonProgression[index - 1].distance_miles) * (1 + (seasonProgression[index - 1].difficulty_rating - 3) * 0.02))
+                // Calculate XC Time equivalent using NEW formula (direct xc_time_rating multiplier)
+                const xcTime = result.time_seconds * result.xc_time_rating
+                               
+                const isImprovement = index > 0 && xcTime < (seasonProgression[index - 1].time_seconds * seasonProgression[index - 1].xc_time_rating)
                 const isPR = personalBests.some(pb => 
                   pb.best_time === result.time_seconds && 
                   pb.distance_miles === result.distance_miles
@@ -302,6 +302,9 @@ export default function AthletePage({ params }: { params: { id: string } }) {
                       </div>
                       <div className="text-xs text-gray-500">
                         #{result.place_overall} • {formatDate(result.meet_date)} • {result.course_name}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        Course difficulty: {result.mile_difficulty}x vs track mile
                       </div>
                     </div>
                     <div className="text-xs text-gray-400 text-right">
@@ -344,6 +347,9 @@ export default function AthletePage({ params }: { params: { id: string } }) {
                     Time
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    XC Time
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Place
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -357,6 +363,9 @@ export default function AthletePage({ params }: { params: { id: string } }) {
                     pb.best_time === result.time_seconds && 
                     pb.distance_miles === result.distance_miles
                   )
+                  
+                  // Calculate XC Time for this result
+                  const xcTime = result.time_seconds * result.xc_time_rating
                   
                   return (
                     <tr key={result.id} className="hover:bg-gray-50">
@@ -373,6 +382,9 @@ export default function AthletePage({ params }: { params: { id: string } }) {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {result.course_name}
+                        <div className="text-xs text-gray-400">
+                          {result.mile_difficulty}x difficulty
+                        </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {result.distance_miles} miles
@@ -380,6 +392,9 @@ export default function AthletePage({ params }: { params: { id: string } }) {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {formatTime(result.time_seconds)}
                         {isPR && <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">PR</span>}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {formatTime(Math.round(xcTime))}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         #{result.place_overall}

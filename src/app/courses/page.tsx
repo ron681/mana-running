@@ -8,7 +8,8 @@ interface Course {
   name: string
   distance_meters: number
   distance_miles: number
-  rating: number | null
+  mile_difficulty: number | null      // NEW: How hard vs 1-mile track
+  xc_time_rating: number | null       // NEW: For XC time conversion
   rating_confidence: string
   total_results_count: number
   meets_count?: number
@@ -70,17 +71,18 @@ export default function CoursesPage() {
   const distances = [...new Set(courses.map(c => c.distance_miles).filter(Boolean))]
     .sort((a, b) => a - b)
 
-  const getDifficultyColor = (rating: number) => {
-    if (rating >= 1.025) return 'bg-red-100 text-red-800'      // Extremely Hard
-    if (rating >= 1.000) return 'bg-orange-100 text-orange-800' // Hard  
-    if (rating >= 0.975) return 'bg-yellow-100 text-yellow-800' // Moderate
-    return 'bg-green-100 text-green-800'                        // Fast
+  // Updated difficulty colors and labels for mile_difficulty (vs 1-mile track baseline)
+  const getDifficultyColor = (mileDifficulty: number) => {
+    if (mileDifficulty >= 1.20) return 'bg-red-100 text-red-800'      // Very Hard (20%+ harder than track mile)
+    if (mileDifficulty >= 1.15) return 'bg-orange-100 text-orange-800' // Hard (15-20% harder)
+    if (mileDifficulty >= 1.05) return 'bg-yellow-100 text-yellow-800' // Moderate (5-15% harder)
+    return 'bg-green-100 text-green-800'                               // Fast/Easy (< 5% harder)
   }
 
-  const getDifficultyLabel = (rating: number) => {
-    if (rating >= 1.025) return 'Extremely Hard'
-    if (rating >= 1.000) return 'Hard'
-    if (rating >= 0.975) return 'Moderate'
+  const getDifficultyLabel = (mileDifficulty: number) => {
+    if (mileDifficulty >= 1.20) return 'Very Hard'
+    if (mileDifficulty >= 1.15) return 'Hard'  
+    if (mileDifficulty >= 1.05) return 'Moderate'
     return 'Fast'
   }
 
@@ -201,7 +203,7 @@ export default function CoursesPage() {
                   <tr className="border-b text-left bg-gray-50">
                     <th className="py-3 px-4 font-bold text-black">Course Name</th>
                     <th className="py-3 px-4 font-bold text-black">Distance</th>
-                    <th className="py-3 px-4 font-bold text-black">Rating</th>
+                    <th className="py-3 px-4 font-bold text-black">Difficulty</th>
                     <th className="py-3 px-4 font-bold text-black">Meets</th>
                     <th className="py-3 px-4 font-bold text-black">Total Results</th>
                     <th className="py-3 px-4 font-bold text-black">Actions</th>
@@ -230,14 +232,19 @@ export default function CoursesPage() {
                           </div>
                         </td>
                         <td className="py-4 px-4">
-                          {course.rating !== null ? (
+                          {course.mile_difficulty !== null ? (
                             <div className="flex flex-col space-y-1">
-                              <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.rating)}`}>
-                                {getDifficultyLabel(course.rating)}
+                              <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.mile_difficulty)}`}>
+                                {getDifficultyLabel(course.mile_difficulty)}
                               </span>
                               <span className="text-xs text-gray-500">
-                                {course.rating.toFixed(3)}
+                                {course.mile_difficulty.toFixed(3)}x vs track mile
                               </span>
+                              {course.xc_time_rating && (
+                                <span className="text-xs text-blue-600">
+                                  XC Rating: {course.xc_time_rating.toFixed(3)}
+                                </span>
+                              )}
                             </div>
                           ) : (
                             <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
@@ -298,6 +305,31 @@ export default function CoursesPage() {
             </div>
           </div>
         )}
+
+        {/* Rating System Explanation */}
+        <div className="mt-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
+          <h3 className="font-semibold text-blue-900 mb-3">Course Rating System</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-800">
+            <div>
+              <h4 className="font-medium mb-2">Difficulty Rating (vs Track Mile):</h4>
+              <ul className="space-y-1">
+                <li>• <strong>1.00:</strong> Same effort as 1-mile track</li>
+                <li>• <strong>1.10:</strong> 10% harder than track mile</li>
+                <li>• <strong>1.20:</strong> 20% harder than track mile</li>
+                <li>• Higher rating = more challenging course</li>
+              </ul>
+            </div>
+            <div>
+              <h4 className="font-medium mb-2">XC Time Conversion:</h4>
+              <ul className="space-y-1">
+                <li>• XC Rating converts times to Crystal Springs equivalent</li>
+                <li>• Allows fair comparison across different courses</li>
+                <li>• Used for team selection and performance analysis</li>
+                <li>• Based on distance and terrain difficulty</li>
+              </ul>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   )
