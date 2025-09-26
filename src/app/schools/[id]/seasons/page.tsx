@@ -281,9 +281,9 @@ function getSeasonBests(results: any[]): any[] {
   }, {} as Record<string, any[]>);
 
   const seasonBests = [];
-  for (const [athleteId, athleteResults] of Object.entries(athleteGroups)) {
+  for (const [athleteId, athleteResults] of Object.entries(athleteGroups) as [string, any[]][]) {
     // Find fastest XC time for this athlete
-    const fastest = athleteResults.reduce((best, current) => {
+    const fastest = athleteResults.reduce((best: any, current: any) => {
       const currentXCTime = current.time_seconds * current.xc_time_rating;
       const bestXCTime = best.time_seconds * best.xc_time_rating;
       return currentXCTime < bestXCTime ? current : best;
@@ -336,7 +336,7 @@ function getTopPerformers(results: any[], limit: number): AthleteSeasonResult[] 
   // Calculate best performance for each athlete
   const performers: AthleteSeasonResult[] = [];
 
-  for (const [athleteId, athleteResults] of Object.entries(athleteGroups)) {
+  for (const [athleteId, athleteResults] of Object.entries(athleteGroups) as [string, any[]][]) {
     const xcTimes = athleteResults.map(r => ({
       xc_time: r.time_seconds * r.xc_time_rating,
       actual_time: r.time_seconds,
