@@ -356,21 +356,34 @@ export function extractMeetInfo(data: any[], fileName: string): MeetInfo {
     needsManualCourseName = true;
   }
 
-  // Extract date - CSV first, then filename
-  let meetDate = '';
-  if (firstRow.Date) {
-    meetDate = firstRow.Date.toString().trim();
-  } else if (firstRow['Meet Date']) {
-    meetDate = firstRow['Meet Date'].toString().trim();
-  } else {
-    const dateMatch = fileName.match(/(\d{4})\s*(\d{2})(\d{2})/);
-    if (dateMatch) {
-      const [, year, month, day] = dateMatch;
-      meetDate = `${year}-${month}-${day}`;
+  // Extract date - check multiple column name possibilities
+let meetDate = '';
+const dateFields = ['meet_date', 'Date', 'Meet Date', 'Event Date', 'date'];
+for (const field of dateFields) {
+  if (firstRow[field]) {
+    const dateValue = firstRow[field].toString().trim();
+    // Handle MM/DD/YY format specifically
+    if (dateValue.match(/^\d{1,2}\/\d{1,2}\/\d{2}$/)) {
+      const [month, day, year] = dateValue.split('/');
+      const fullYear = '20' + year; // Convert 25 to 2025
+      meetDate = `${fullYear}-${month.padStart(2, '0')}-${day.padStart(2, '0')}`;
+      console.log(`Date converted: "${dateValue}" → "${meetDate}"`);
     } else {
-      meetDate = new Date().toISOString().split('T')[0];
+      meetDate = dateValue;
     }
+    break;
   }
+}
+
+if (!meetDate) {
+  const dateMatch = fileName.match(/(\d{4})\s*(\d{2})(\d{2})/);
+  if (dateMatch) {
+    const [, year, month, day] = dateMatch;
+    meetDate = `${year}-${month}-${day}`;
+  } else {
+    meetDate = new Date().toISOString().split('T')[0];
+  }
+}
 
   // ENHANCED: Distance extraction with mile-first priority
   let distanceMeters = 5000; // Default to 5K

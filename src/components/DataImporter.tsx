@@ -103,35 +103,66 @@ export default function EnhancedDataImporter() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Parse CSV file
-  const parseCSV = (file: File): Promise<ParsedData[]> => {
-    return new Promise((resolve, reject) => {
-      Papa.parse(file, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        transformHeader: (header) => header.trim(), // Clean headers
-        complete: (results) => {
-          if (results.errors.length > 0) {
-            const criticalErrors = results.errors.filter(e => e.type === 'Delimiter');
-            if (criticalErrors.length > 0) {
-              reject(new Error('CSV parsing failed: ' + criticalErrors.map(e => e.message).join(', ')));
-              return;
-            }
-          }
-          
-          // Validate the parsed data
-          const validation = validateCSVData(results.data);
-          if (!validation.isValid) {
-            reject(new Error('CSV validation failed: ' + validation.errors.join(', ')));
+  // Parse CSV file with flexible column mapping
+const parseCSV = (file: File): Promise<ParsedData[]> => {
+  return new Promise((resolve, reject) => {
+    Papa.parse(file, {
+      header: true,
+      dynamicTyping: true,
+      skipEmptyLines: true,
+      transformHeader: (header) => header.trim(),
+      complete: (results) => {
+        if (results.errors.length > 0) {
+          const criticalErrors = results.errors.filter(e => e.type === 'Delimiter');
+          if (criticalErrors.length > 0) {
+            reject(new Error('CSV parsing failed: ' + criticalErrors.map(e => e.message).join(', ')));
             return;
           }
+        }
+        
+        try {
+          // Map columns to standardized format
+          const mappedData = results.data.map((row: any) => {
+            const mapped: ParsedData = {
+              Place: row.Place || row.place || row.Position || 0,
+              Grade: parseInt(row.grade || row.Grade) || 12,
+              Athlete: row.Athlete || row.athlete || `${row.first_name || ''} ${row.last_name || ''}`.trim() || '',
+              Duration: row.Duration || row.time || row.Time || row['Finish Time'] || '',
+              School: row.School || row.school_name || row.Team || '',
+              Race: row.Race || row.race || row.Category || 'Varsity',
+              Gender: ''
+            };
+
+            // Handle gender conversion
+            let genderValue = row.Gender || row.gender || '';
+            if (genderValue.toLowerCase() === 'boys' || genderValue === 'M') {
+              mapped.Gender = 'Boys';
+            } else if (genderValue.toLowerCase() === 'girls' || genderValue === 'F') {
+              mapped.Gender = 'Girls';
+            } else {
+              mapped.Gender = 'Boys'; // Default
+            }
+
+            return mapped;
+          });
           
-          resolve(results.data as ParsedData[]);
-        },
-        error: reject
-      });
+          // Filter valid rows
+          const cleanedData = mappedData.filter(row => 
+            row.Athlete && row.Duration && row.School
+          );
+          
+          console.log(`Mapped ${results.data.length} rows to ${cleanedData.length} clean rows`);
+          console.log('Sample mapped row:', cleanedData[0]);
+          
+          resolve(cleanedData);
+        } catch (error) {
+          reject(new Error(`Data mapping failed: ${error}`));
+        }
+      },
+      error: reject
     });
-  };
+  });
+};
 
   // Check if course exists with smart matching
   const checkCourseExists = async (meetInfo: MeetInfo) => {
@@ -140,8 +171,14 @@ export default function EnhancedDataImporter() {
       const courses = await courseCRUD.getAll();
       console.log('Courses retrieved:', courses.length, 'courses');
       
-      // Extract the base name (e.g., "Baylands" from "Baylands Park")
-      const baseName = meetInfo.courseName.replace(' Park', '').toLowerCase();
+    // Clean course name - remove distance indicators
+const cleanedCourseName = meetInfo.courseName
+  .replace(/\s*\|\s*[\d.]+\s*(miles?|mi|k|km|m|meters?)\s*/gi, '')
+  .replace(/\s+/g, ' ')
+  .trim();
+  
+const baseName = cleanedCourseName.replace(' Park', '').toLowerCase();
+console.log(`Course name cleaned: "${meetInfo.courseName}" → "${cleanedCourseName}"`);
       console.log('Looking for courses matching:', baseName);
       
       // Look for courses that contain the base name
@@ -174,11 +211,31 @@ const handleFileSelect = async (selectedFile: File) => {
   
   if (selectedFile.type === 'text/csv' || selectedFile.name.endsWith('.csv')) {
     try {
-      const data = await parseCSV(selectedFile);
+const data = await parseCSV(selectedFile);
       setDataPreview(data.slice(0, 5));
       
       // Extract meet info using the enhanced function
-      const meetData = extractMeetInfo(data, selectedFile.name);
+      // Extract meet info with course name cleaning
+let meetData = extractMeetInfo(data, selectedFile.name);
+
+// Clean the course name - remove distance indicators
+if (meetData.courseName) {
+  const originalCourseName = meetData.courseName;
+  meetData.courseName = meetData.courseName
+    .replace(/\s*\|\s*[\d.]+\s*(miles?|mi|k|km|m|meters?)\s*/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+    
+  console.log(`Course name cleaned: "${originalCourseName}" → "${meetData.courseName}"`);
+  
+  // Also extract distance from the original course name if no distance was found
+  if (meetData.distanceMeters === 5000 && originalCourseName.includes('2.74')) {
+    meetData.distanceMeters = 4409.5776; // 2.74 miles exactly
+    meetData.distanceMiles = 2.74;
+    meetData.distance = '2.74 Miles';
+    console.log('Updated distance from course name: 2.74 miles');
+  }
+}
       
       // Declare userCourseName in proper scope
       let userCourseName: string | null = null;
@@ -295,22 +352,40 @@ if (!meetInfo) {
     ? meetData.courseName.trim() 
     : 'New Course'; // Fallback if somehow empty
   
-  // Ask for difficulty rating with corrected defaults and range
-  const difficultyInput = prompt(
+  // Ask for mile_difficulty (how much harder than 1-mile track)
+  const mileDifficultyInput = prompt(
     `Creating new course: "${finalCourseName}" - ${meetData.distance}\n\n` +
-    `Please enter difficulty rating:\n` +
-    `Typical range: 0.85 - 1.2\n` +
-    `1.0 = average difficulty`,
-    '1.0'
+    `Enter mile difficulty rating (how much harder than 1-mile track):\n` +
+    `• 1.00000 = Same as 1-mile track\n` +
+    `• 1.12518 = Baylands Park 4k (12.5% harder)\n` +
+    `• 1.20516 = Montgomery Hill 2.74mi (20.5% harder)\n` +
+    `• Typical range: 1.0 - 1.3`,
+    '1.1'
   );
   
-  const difficulty = parseFloat(difficultyInput || '1.0');
-  const finalDifficulty = (isNaN(difficulty) || difficulty < 0.5 || difficulty > 2.0) ? 1.0 : difficulty;
+  const mileDifficulty = parseFloat(mileDifficultyInput || '1.1');
+  const finalMileDifficulty = (isNaN(mileDifficulty) || mileDifficulty < 0.8 || mileDifficulty > 2.0) 
+    ? 1.1 : mileDifficulty;
+
+  // Calculate xc_time_rating using the exact Excel formula
+  const xcTimeRating = (4409.603 / meetData.distanceMeters) * (1.17747004342738 / finalMileDifficulty);
+  const roundedXcTimeRating = Math.round(xcTimeRating * 100000) / 100000;
   
+  const distanceMiles = meetData.distanceMeters / 1609.344;
+  
+  console.log('Calculated ratings:', {
+    mileDifficulty: finalMileDifficulty,
+    xcTimeRating: roundedXcTimeRating,
+    distanceMeters: meetData.distanceMeters
+  });
+
   const courseData = {
-    name: finalCourseName, // Ensure this is never empty
+    name: finalCourseName,
     distance_meters: Math.round(meetData.distanceMeters),
-    difficulty_rating: finalDifficulty
+    distance_miles: Math.round(distanceMiles * 100) / 100,
+    mile_difficulty: finalMileDifficulty,
+    xc_time_rating: roundedXcTimeRating,
+    rating_confidence: 0.5
   };
   
   console.log('Creating course with data:', courseData);
@@ -374,7 +449,7 @@ const continueImport = async (data: ParsedData[], meetInfo: MeetInfo, courseData
 
     const meetData = {
       name: meetInfo.name,
-      date: meetInfo.date,
+      meet_date: meetInfo.date,
       meet_type: meetType,
       course_id: courseData.id
     };
@@ -615,26 +690,34 @@ const handleCourseSelection = async (course: any) => {
         ? meetInfo.courseName.trim() 
         : 'New Course'; // Fallback if somehow empty
       
-      // Ask for difficulty rating with corrected defaults and range
-      const difficultyInput = prompt(
+// Ask for mile_difficulty (how much harder than 1-mile track)
+      const mileDifficultyInput = prompt(
         `Creating new course: "${finalCourseName}" - ${meetInfo.distance}\n\n` +
-        `Please enter difficulty rating:\n` +
-        `Typical range: 0.85 - 1.2\n` +
-        `1.0 = average difficulty`,
-        '1.0'
+        `Enter mile difficulty rating (how much harder than 1-mile track):\n` +
+        `• 1.00000 = Same as 1-mile track\n` +
+        `• 1.12518 = Baylands Park 4k (12.5% harder)\n` +
+        `• 1.20516 = Montgomery Hill 2.74mi (20.5% harder)\n` +
+        `• Typical range: 1.0 - 1.3`,
+        '1.1'
       );
       
-      const difficulty = parseFloat(difficultyInput || '1.0');
-      const finalDifficulty = (isNaN(difficulty) || difficulty < 0.5 || difficulty > 2.0) ? 1.0 : difficulty;
+      const mileDifficulty = parseFloat(mileDifficultyInput || '1.1');
+      const finalMileDifficulty = (isNaN(mileDifficulty) || mileDifficulty < 0.8 || mileDifficulty > 2.0) 
+        ? 1.1 : mileDifficulty;
+
+      // Calculate xc_time_rating using the exact Excel formula
+      const xcTimeRating = (4409.603 / meetInfo.distanceMeters) * (1.17747004342738 / finalMileDifficulty);
+      const roundedXcTimeRating = Math.round(xcTimeRating * 100000) / 100000;
       
-      // Clean course creation - only essential fields
-const rating = (finalDifficulty * 4747) / Math.round(meetInfo.distanceMeters);
+      const distanceMiles = meetInfo.distanceMeters / 1609.344;
 
 const courseData = {
-  name: finalCourseName, // Ensure this is never empty
+  name: finalCourseName,
   distance_meters: Math.round(meetInfo.distanceMeters),
-  difficulty_rating: finalDifficulty,
-  rating: rating  // Add calculated rating
+  distance_miles: Math.round(distanceMiles * 100) / 100,
+  mile_difficulty: finalMileDifficulty,
+  xc_time_rating: roundedXcTimeRating,
+  rating_confidence: 0.5
 };
       
       console.log('Course data being sent:', courseData);
