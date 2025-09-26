@@ -31,27 +31,6 @@ interface RecentMeet {
   }
 }
 
-interface TopPerformance {
-  athlete: {
-    first_name: string
-    last_name: string
-  }
-  course_name: string
-  time_seconds: number
-  meet_name: string
-  meet_date: string
-  gender: string
-}
-
-interface BigMover {
-  athlete: {
-    first_name: string
-    last_name: string
-  }
-  improvement_percentage: number
-  gender: string
-}
-
 export default function Home() {
   const [stats, setStats] = useState<Stats>({
     schools: 0,
@@ -60,14 +39,6 @@ export default function Home() {
     results: 0
   })
   const [recentMeets, setRecentMeets] = useState<RecentMeet[]>([])
-  const [topPerformances, setTopPerformances] = useState<{
-    boys: TopPerformance[]
-    girls: TopPerformance[]
-  }>({ boys: [], girls: [] })
-  const [bigMovers, setBigMovers] = useState<{
-    boys: BigMover[]
-    girls: BigMover[]
-  }>({ boys: [], girls: [] })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -118,66 +89,6 @@ export default function Home() {
           setRecentMeets(recentMeetsFiltered)
         }
       }
-
-      // Load big movers and top performances from recent meets
-      const allResults = await resultCRUD.getAllWithDetails()
-      if (allResults && recentMeets.length > 0) {
-        const now = new Date()
-        const thirtyDaysAgo = new Date(now.getTime() - (30 * 24 * 60 * 60 * 1000))
-        
-        // Calculate big movers (XC time improvements using NEW rating system)
-        const bigMoverResults = calculateBigMovers(allResults, thirtyDaysAgo)
-        setBigMovers(bigMoverResults)
-
-        // Filter results from the last 10 days and valid times for top performances
-        const tenDaysAgo = new Date(now.getTime() - (10 * 24 * 60 * 60 * 1000))
-        const recentResults = allResults.filter(result => {
-          const meetDate = new Date(result.meet_date)
-          return !isNaN(meetDate.getTime()) && 
-                 meetDate >= tenDaysAgo && 
-                 result.time_seconds > 0 &&
-                 result.time_seconds < 3600
-        })
-
-        const boysResults = recentResults
-          .filter(result => 
-            result.gender === 'M' 
-          )
-          .sort((a, b) => a.time_seconds - b.time_seconds)
-          .slice(0, 5)
-
-        const girlsResults = recentResults
-          .filter(result => 
-            result.gender === 'F' 
-          )
-          .sort((a, b) => a.time_seconds - b.time_seconds)
-          .slice(0, 5)
-
-        setTopPerformances({
-          boys: boysResults.map(result => ({
-            athlete: {
-              first_name: result.first_name,
-              last_name: result.last_name
-            },
-            course_name: result.course_name,
-            time_seconds: result.time_seconds,
-            meet_name: result.meet_name,
-            meet_date: result.meet_date,
-            gender: result.gender
-          })),
-          girls: girlsResults.map(result => ({
-            athlete: {
-              first_name: result.first_name,
-              last_name: result.last_name
-            },
-            course_name: result.course_name,
-            time_seconds: result.time_seconds,
-            meet_name: result.meet_name,
-            meet_date: result.meet_date,
-            gender: result.gender
-          }))
-        })
-      }
       
     } catch (err) {
       console.error('Error loading data:', err)
@@ -185,84 +96,6 @@ export default function Home() {
     } finally {
       setLoading(false)
     }
-  }
-
-  const calculateBigMovers = (allResults: any[], cutoffDate: Date): { boys: BigMover[], girls: BigMover[] } => {
-    const athleteResults = new Map<string, any[]>()
-    
-    // Group results by athlete and calculate XC Time for each result using NEW rating system
-    allResults.forEach(result => {
-      if (result.athlete_id && result.time_seconds > 0 && result.xc_time_rating) {
-        // Calculate XC Time using new rating system (direct multiplier)
-        const xcTime = result.time_seconds * result.xc_time_rating
-        
-        if (!athleteResults.has(result.athlete_id)) {
-          athleteResults.set(result.athlete_id, [])
-        }
-        athleteResults.get(result.athlete_id)!.push({
-          ...result,
-          xc_time_seconds: xcTime  // Store calculated XC Time
-        })
-      }
-    })
-
-    const improvements: BigMover[] = []
-
-    athleteResults.forEach((results, athleteId) => {
-      const sortedResults = results.sort((a, b) => 
-        new Date(a.meet_date).getTime() - new Date(b.meet_date).getTime()
-      )
-
-      const recentResults = sortedResults.filter(result => 
-        new Date(result.meet_date) >= cutoffDate
-      )
-
-      if (recentResults.length === 0) return
-
-      const historicalResults = sortedResults.filter(result => 
-        new Date(result.meet_date) < cutoffDate
-      )
-
-      if (historicalResults.length === 0) return
-
-      // Use XC Time for fair comparison across courses
-      const oldPR = Math.min(...historicalResults.map(r => r.xc_time_seconds))
-
-      const bestRecentResult = recentResults.reduce((best, current) => 
-        current.xc_time_seconds < best.xc_time_seconds ? current : best
-      )
-
-      const newPR = bestRecentResult.xc_time_seconds
-
-      if (newPR < oldPR) {
-        const improvementPercentage = ((oldPR - newPR) / oldPR) * 100
-
-        improvements.push({
-          athlete: {
-            first_name: bestRecentResult.first_name,
-            last_name: bestRecentResult.last_name
-          },
-          improvement_percentage: improvementPercentage,
-          gender: bestRecentResult.gender
-        })
-      }
-    })
-
-    const boys = improvements
-      .filter(mover => 
-        mover.gender === 'M' 
-      )
-      .sort((a, b) => b.improvement_percentage - a.improvement_percentage)
-      .slice(0, 5)
-
-    const girls = improvements
-      .filter(mover => 
-        mover.gender === 'F'  // FIXED: Was filtering 'M' for both boys and girls
-      )
-      .sort((a, b) => b.improvement_percentage - a.improvement_percentage)
-      .slice(0, 5)
-
-    return { boys, girls }
   }
 
   const formatDate = (dateString: string) => {
@@ -425,9 +258,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Main Content Grid */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-          {/* Recent Meets */}
+        {/* Recent Meets - Single Column */}
+        <div className="max-w-4xl mx-auto mb-16">
           <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
             <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-6 text-white">
               <div className="flex items-center">
@@ -486,192 +318,6 @@ export default function Home() {
                   ))}
                 </div>
               )}
-            </div>
-          </div>
-
-          {/* Big Movers */}
-          <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden">
-            <div className="bg-gradient-to-r from-green-600 to-emerald-600 p-6 text-white">
-              <div className="flex items-center">
-                <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mr-4">
-                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                  </svg>
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold">Big Movers</h2>
-                  <p className="text-green-100 text-sm">Top XC Time improvements in the last 30 days</p>
-                </div>
-              </div>
-            </div>
-            <div className="p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Boys Big Movers */}
-                <div>
-                  <h3 className="text-lg font-bold text-blue-700 mb-4 flex items-center">
-                    <div className="w-2 h-2 bg-blue-600 rounded-full mr-2"></div>
-                    Boys
-                  </h3>
-                  {bigMovers.boys.length === 0 ? (
-                    <div className="text-center py-8">
-                      <div className="text-slate-400 text-sm">No recent improvements</div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {bigMovers.boys.map((mover, index) => (
-                        <div key={index} className="flex justify-between items-center p-3 bg-gradient-to-r from-blue-50 to-green-50 rounded-lg border-l-4 border-green-500">
-                          <div className="font-semibold text-slate-800 text-sm">
-                            {mover.athlete.first_name} {mover.athlete.last_name}
-                          </div>
-                          <div className="font-bold text-green-600">
-                            -{mover.improvement_percentage.toFixed(1)}%
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-
-                {/* Girls Big Movers */}
-                <div>
-                  <h3 className="text-lg font-bold text-pink-700 mb-4 flex items-center">
-                    <div className="w-2 h-2 bg-pink-600 rounded-full mr-2"></div>
-                    Girls
-                  </h3>
-                  {bigMovers.girls.length === 0 ? (
-                    <div className="text-center py-8">
-                      <div className="text-slate-400 text-sm">No recent improvements</div>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {bigMovers.girls.map((mover, index) => (
-                        <div key={index} className="flex justify-between items-center p-3 bg-gradient-to-r from-pink-50 to-green-50 rounded-lg border-l-4 border-green-500">
-                          <div className="font-semibold text-slate-800 text-sm">
-                            {mover.athlete.first_name} {mover.athlete.last_name}
-                          </div>
-                          <div className="font-bold text-green-600">
-                            -{mover.improvement_percentage.toFixed(1)}%
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Top Performances */}
-        <div className="bg-white rounded-2xl shadow-lg border border-slate-100 overflow-hidden mb-12">
-          <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white">
-            <div className="flex items-center">
-              <div className="w-10 h-10 bg-white/20 rounded-lg flex items-center justify-center mr-4">
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                </svg>
-              </div>
-              <div>
-                <h2 className="text-xl font-bold">Elite Performances</h2>
-                <p className="text-purple-100 text-sm">Fastest times from the past 10 days</p>
-              </div>
-            </div>
-          </div>
-          <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Boys Performances */}
-              <div>
-                <h3 className="text-lg font-bold text-blue-700 mb-4 flex items-center">
-                  <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                    <svg className="w-4 h-4 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  Boys
-                </h3>
-                {topPerformances.boys.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                      </svg>
-                    </div>
-                    <div className="text-slate-400 text-sm">No recent performances</div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {topPerformances.boys.map((performance, index) => (
-                      <div key={index} className="group bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-4 border border-blue-100 hover:border-blue-200 transition-all duration-200">
-                        <div className="flex justify-between items-center">
-                          <div className="flex-1">
-                            <div className="font-bold text-slate-800 group-hover:text-blue-700 transition-colors">
-                              {performance.athlete.first_name} {performance.athlete.last_name}
-                            </div>
-                            <div className="text-slate-500 text-sm truncate">
-                              {performance.course_name}
-                            </div>
-                          </div>
-                          <div className="text-right ml-4">
-                            <div className="font-mono text-lg font-bold text-blue-600">
-                              {formatTime(performance.time_seconds)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {formatDate(performance.meet_date)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Girls Performances */}
-              <div>
-                <h3 className="text-lg font-bold text-pink-700 mb-4 flex items-center">
-                  <div className="w-8 h-8 bg-pink-100 rounded-full flex items-center justify-center mr-3">
-                    <svg className="w-4 h-4 text-pink-600" fill="currentColor" viewBox="0 0 20 20">
-                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                    </svg>
-                  </div>
-                  Girls
-                </h3>
-                {topPerformances.girls.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                      <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                      </svg>
-                    </div>
-                    <div className="text-slate-400 text-sm">No recent performances</div>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {topPerformances.girls.map((performance, index) => (
-                      <div key={index} className="group bg-gradient-to-r from-pink-50 to-rose-50 rounded-xl p-4 border border-pink-100 hover:border-pink-200 transition-all duration-200">
-                        <div className="flex justify-between items-center">
-                          <div className="flex-1">
-                            <div className="font-bold text-slate-slate-800 group-hover:text-pink-700 transition-colors">
-                              {performance.athlete.first_name} {performance.athlete.last_name}
-                            </div>
-                            <div className="text-slate-500 text-sm truncate">
-                              {performance.course_name}
-                            </div>
-                          </div>
-                          <div className="text-right ml-4">
-                            <div className="font-mono text-lg font-bold text-pink-600">
-                              {formatTime(performance.time_seconds)}
-                            </div>
-                            <div className="text-xs text-slate-500">
-                              {formatDate(performance.meet_date)}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
             </div>
           </div>
         </div>
