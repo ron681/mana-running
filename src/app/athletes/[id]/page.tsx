@@ -83,11 +83,52 @@ function formatGraduationYear(year: number): string {
   return year.toString()
 }
 
+function calculatePace(timeSeconds: number, distanceMiles: number): number {
+  return timeSeconds / distanceMiles / 100 // Return pace per mile in seconds
+}
+
+function formatPace(paceSeconds: number): string {
+  const minutes = Math.floor(paceSeconds / 60)
+  const seconds = Math.floor(paceSeconds % 60)
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`
+}
+
+function getSortValue(result: ResultWithDetails, key: string): any {
+  switch (key) {
+    case 'date':
+      return new Date(result.meet_date).getTime()
+    case 'meet':
+      return result.meet_name.toLowerCase()
+    case 'course':
+      return result.course_name.toLowerCase()
+    case 'distance':
+      return result.distance_miles
+    case 'time':
+      return result.time_seconds
+    case 'pace':
+      return calculatePace(result.time_seconds, result.distance_miles)
+    case 'mileEquiv':
+      return calculatePace(result.time_seconds, result.distance_miles) / result.mile_difficulty
+    case 'xcTime':
+      return result.time_seconds * result.xc_time_rating
+    case 'place':
+      return result.place_overall
+    case 'season':
+      return result.season_year
+    default:
+      return 0
+  }
+}
+
 export default function AthletePage({ params }: { params: { id: string } }) {
   const [athlete, setAthlete] = useState<Athlete | null>(null)
   const [results, setResults] = useState<ResultWithDetails[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [sortConfig, setSortConfig] = useState<{
+    key: string;
+    direction: 'asc' | 'desc';
+  } | null>(null)
 
   useEffect(() => {
     loadAthleteData()
@@ -152,6 +193,63 @@ export default function AthletePage({ params }: { params: { id: string } }) {
     } finally {
       setLoading(false)
     }
+  }
+
+  const handleSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc'
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc'
+    }
+    setSortConfig({ key, direction })
+  }
+
+  const getSortedResults = () => {
+    if (!sortConfig) return results
+
+    return [...results].sort((a, b) => {
+      const aValue = getSortValue(a, sortConfig.key)
+      const bValue = getSortValue(b, sortConfig.key)
+
+      if (aValue < bValue) {
+        return sortConfig.direction === 'asc' ? -1 : 1
+      }
+      if (aValue > bValue) {
+        return sortConfig.direction === 'asc' ? 1 : -1
+      }
+      return 0
+    })
+  }
+
+  const SortableHeader = ({ sortKey, children }: { sortKey: string; children: React.ReactNode }) => {
+    const isActive = sortConfig?.key === sortKey
+    const direction = isActive ? sortConfig.direction : null
+
+    return (
+      <th 
+        className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100 transition-colors"
+        onClick={() => handleSort(sortKey)}
+      >
+        <div className="flex items-center space-x-1">
+          <span>{children}</span>
+          <div className="flex flex-col">
+            <svg 
+              className={`w-3 h-3 ${isActive && direction === 'asc' ? 'text-blue-600' : 'text-gray-300'}`}
+              fill="currentColor" 
+              viewBox="0 0 20 20"
+            >
+              <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+            </svg>
+            <svg 
+              className={`w-3 h-3 -mt-1 ${isActive && direction === 'desc' ? 'text-blue-600' : 'text-gray-300'}`}
+              fill="currentColor" 
+              viewBox="0 0 20 20"
+            >
+              <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+            </svg>
+          </div>
+        </div>
+      </th>
+    )
   }
 
   if (loading) {
@@ -331,41 +429,29 @@ export default function AthletePage({ params }: { params: { id: string } }) {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Date
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Meet
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Course
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Distance
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Time
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    XC Time
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Place
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Season
-                  </th>
+                  <SortableHeader sortKey="date">Date</SortableHeader>
+                  <SortableHeader sortKey="meet">Meet</SortableHeader>
+                  <SortableHeader sortKey="course">Course</SortableHeader>
+                  <SortableHeader sortKey="distance">Distance</SortableHeader>
+                  <SortableHeader sortKey="time">Time</SortableHeader>
+                  <SortableHeader sortKey="pace">Pace</SortableHeader>
+                  <SortableHeader sortKey="mileEquiv">Mile Equiv</SortableHeader>
+                  <SortableHeader sortKey="xcTime">XC Time</SortableHeader>
+                  <SortableHeader sortKey="place">Place</SortableHeader>
+                  <SortableHeader sortKey="season">Season</SortableHeader>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {results.map((result) => {
+                {getSortedResults().map((result) => {
                   const isPR = personalBests.some(pb => 
                     pb.best_time === result.time_seconds && 
                     pb.distance_miles === result.distance_miles
                   )
                   
-                  // Calculate XC Time for this result
+                  // Calculate values for new columns
                   const xcTime = result.time_seconds * result.xc_time_rating
+                  const pace = calculatePace(result.time_seconds, result.distance_miles)
+                  const mileEquiv = pace / result.mile_difficulty
                   
                   return (
                     <tr key={result.id} className="hover:bg-gray-50">
@@ -392,6 +478,12 @@ export default function AthletePage({ params }: { params: { id: string } }) {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                         {formatTime(result.time_seconds)}
                         {isPR && <span className="ml-2 text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">PR</span>}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {formatPace(pace)}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                        {formatPace(mileEquiv)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                         {formatTime(Math.round(xcTime))}
