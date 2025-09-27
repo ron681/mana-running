@@ -114,8 +114,8 @@ async function getSchoolSeasons(schoolId: string): Promise<SeasonData[]> {
     // Academic year: July 1 - June 30
     // If meet is July-December, it's in that year's season
     // If meet is January-June, it's in the previous year's season
-    const academicYear = month >= 7 ? year : year - 1;
-    
+ const academicYear = month >= 7 ? year + 1 : year; // Academic year is always one year ahead of season year
+     
     // Calculate current grade from graduation year and meet date
     const currentGrade = 12 - (result.graduation_year - academicYear);
     
