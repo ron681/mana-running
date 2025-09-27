@@ -7,7 +7,6 @@ const inter = Inter({
   subsets: ["latin"],
 });
 
-
 export const metadata: Metadata = {
   title: "Mana Running - Cross Country Statistics",
   description: "Comprehensive Cross Country Statistics & Performance Analytics",
@@ -40,11 +39,14 @@ export default function RootLayout({
                 <a href="/meets" className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-500 transition-colors">
                   Meets
                 </a>
+                <a href="/courses" className="px-4 py-2 bg-green-600 rounded hover:bg-green-500 transition-colors">
+                  Courses
+                </a>
                 <a href="/schools" className="px-4 py-2 bg-red-600 rounded hover:bg-red-500 transition-colors">
                   Schools
                 </a>
-                <a href="/courses" className="px-4 py-2 bg-green-600 rounded hover:bg-green-500 transition-colors">
-                  Courses
+                <a href="/athletes" className="px-4 py-2 bg-orange-600 rounded hover:bg-orange-500 transition-colors">
+                  Athletes
                 </a>
                 <a href="/search" className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-500 transition-colors">
                   Search
