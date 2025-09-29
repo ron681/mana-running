@@ -88,12 +88,11 @@ export async function getAthletesWithFullNames(filters: {
 
   if (error) throw error;
 
-  return data?.map(athlete => ({
-    ...athlete,
-    full_name: getAthleteFullName(athlete),
-    school_name: athlete.schools?.name || 'Unknown School'
-  })) || [];
-}
+ return data?.map(athlete => ({
+  ...athlete,
+  full_name: getAthleteFullName(athlete),
+  school_name: (Array.isArray(athlete.schools) ? athlete.schools[0]?.name : athlete.schools?.name) || 'Unknown School'
+})) || [];
 
 /**
  * Updated results queries with proper field handling and XC calculations
