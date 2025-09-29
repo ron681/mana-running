@@ -273,12 +273,10 @@ export async function getAthleteProfile(athleteId: string) {
 
   if (athleteError) throw athleteError;
 
-  const { data: results, error: resultsError } = await getResultsWithDetails({ 
-    athleteId, 
-    limit: 100 
-  });
-
-  if (resultsError) throw resultsError;
+const results = await getResultsWithDetails({ 
+  athleteId, 
+  limit: 100 
+});
 
   // Calculate course PRs
   const coursePRs = new Map<string, any>();
