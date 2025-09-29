@@ -93,6 +93,7 @@ return data?.map(athlete => ({
   full_name: getAthleteFullName(athlete),
   school_name: (athlete.schools as any)?.name || 'Unknown School'
 })) || [];
+}
 
 /**
  * Updated results queries with proper field handling and XC calculations
@@ -322,11 +323,11 @@ const results = await getResultsWithDetails({
     stats.avgTime = yearResults.reduce((sum, r) => sum + r.time_seconds, 0) / yearResults.length;
   });
 
-  return {
+return {
     athlete: {
       ...athlete,
       full_name: getAthleteFullName(athlete),
-      school_name: athlete.schools?.name || 'Unknown School'
+      school_name: (athlete.schools as any)?.name || 'Unknown School'
     },
     results: results || [],
     coursePRs: Array.from(coursePRs.values()),
