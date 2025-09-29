@@ -13,8 +13,8 @@ interface Course {
   name: string;
   distance_meters: number;
   distance_miles: number;
-  difficulty_rating: number;
-  rating: number;
+  mile_difficulty: number;
+  xc_time_rating: number;  // Add this line
 }
 
 interface MeetInfo {
@@ -116,7 +116,7 @@ export default function CourseSelectionModal({
                               <Ruler className="h-3 w-3" />
                               {course.distance_meters}m ({course.distance_miles} miles)
                             </span>
-                            <span>Difficulty: {course.difficulty_rating}</span>
+                          <span>Difficulty: {course.mile_difficulty.toFixed(3)}</span>
                           </div>
                         </div>
                         <div className="text-right">
