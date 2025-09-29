@@ -15,13 +15,19 @@ interface Course {
   meets_count?: number
 }
 
+type SortField = 'name' | 'distance_miles' | 'mile_difficulty' | 'meets_count' | 'total_results_count';
+type SortDirection = 'asc' | 'desc';
+
 export default function CoursesPage() {
   const [courses, setCourses] = useState<Course[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedDistance, setSelectedDistance] = useState('')
+  const [showWithResults, setShowWithResults] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
+  const [sortField, setSortField] = useState<SortField>('name')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const coursesPerPage = 15
 
   useEffect(() => {
@@ -36,11 +42,7 @@ export default function CoursesPage() {
       const allCourses = await courseCRUD.getAll()
       
       if (allCourses) {
-        // Sort by name
-        const sortedCourses = allCourses.sort((a, b) => 
-          a.name.localeCompare(b.name)
-        )
-        setCourses(sortedCourses)
+        setCourses(allCourses)
       }
     } catch (err) {
       console.error('Error loading courses:', err)
@@ -50,26 +52,116 @@ export default function CoursesPage() {
     }
   }
 
-  // Filter courses based on search and distance
-  const filteredCourses = courses.filter(course => {
-    const matchesSearch = !searchTerm || 
-      course.name.toLowerCase().includes(searchTerm.toLowerCase())
-    
-    const matchesDistance = !selectedDistance || 
-      Math.abs(course.distance_miles - parseFloat(selectedDistance)) < 0.1
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Toggle direction if same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      // New field, default to ascending
+      setSortField(field)
+      setSortDirection('asc')
+    }
+    setCurrentPage(1) // Reset to first page when sorting
+  }
 
-    return matchesSearch && matchesDistance
-  })
+  // Filter and sort courses
+  const filteredAndSortedCourses = courses
+    .filter(course => {
+      const matchesSearch = !searchTerm || 
+        course.name.toLowerCase().includes(searchTerm.toLowerCase())
+      
+      const matchesDistance = !selectedDistance || 
+        Math.abs(course.distance_miles - parseFloat(selectedDistance)) < 0.1
+
+      const matchesResults = !showWithResults || 
+        (course.total_results_count && course.total_results_count > 0)
+
+      return matchesSearch && matchesDistance && matchesResults
+    })
+    .sort((a, b) => {
+      let aValue: any
+      let bValue: any
+
+      switch (sortField) {
+        case 'name':
+          aValue = a.name.toLowerCase()
+          bValue = b.name.toLowerCase()
+          break
+        case 'distance_miles':
+          aValue = a.distance_miles || 0
+          bValue = b.distance_miles || 0
+          break
+        case 'mile_difficulty':
+          aValue = a.mile_difficulty || 0
+          bValue = b.mile_difficulty || 0
+          break
+        case 'meets_count':
+          aValue = a.meets_count || 0
+          bValue = b.meets_count || 0
+          break
+        case 'total_results_count':
+          aValue = a.total_results_count || 0
+          bValue = b.total_results_count || 0
+          break
+        default:
+          return 0
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
 
   // Pagination
-  const totalPages = Math.ceil(filteredCourses.length / coursesPerPage)
+  const totalPages = Math.ceil(filteredAndSortedCourses.length / coursesPerPage)
   const startIndex = (currentPage - 1) * coursesPerPage
   const endIndex = startIndex + coursesPerPage
-  const currentCourses = filteredCourses.slice(startIndex, endIndex)
+  const currentCourses = filteredAndSortedCourses.slice(startIndex, endIndex)
 
   // Get unique distances for filter
   const distances = [...new Set(courses.map(c => c.distance_miles).filter(Boolean))]
     .sort((a, b) => a - b)
+
+  // Sortable header component
+  const SortableHeader = ({ 
+    field, 
+    children, 
+    className = "" 
+  }: { 
+    field: SortField; 
+    children: React.ReactNode; 
+    className?: string;
+  }) => {
+    const isActive = sortField === field
+    const isAsc = sortDirection === 'asc'
+    
+    return (
+      <th 
+        className={`py-3 px-4 font-bold text-black cursor-pointer hover:bg-gray-100 transition-colors ${className}`}
+        onClick={() => handleSort(field)}
+      >
+        <div className="flex items-center gap-1">
+          {children}
+          <div className="flex flex-col ml-1">
+            <svg 
+              className={`w-3 h-3 ${isActive && isAsc ? 'text-green-600' : 'text-gray-400'}`} 
+              fill="currentColor" 
+              viewBox="0 0 20 20"
+            >
+              <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+            </svg>
+            <svg 
+              className={`w-3 h-3 -mt-1 ${isActive && !isAsc ? 'text-green-600' : 'text-gray-400'}`} 
+              fill="currentColor" 
+              viewBox="0 0 20 20"
+            >
+              <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </div>
+        </div>
+      </th>
+    )
+  }
 
   // Updated difficulty colors and labels for mile_difficulty (vs 1-mile track baseline)
   const getDifficultyColor = (mileDifficulty: number) => {
@@ -117,15 +209,23 @@ export default function CoursesPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <div className="container mx-auto px-6 py-8">
-        {/* Page Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-black mb-2">Cross Country Courses</h1>
-          <p className="text-gray-600">Browse all cross country courses with meet history and performance data</p>
+        {/* Page Header with Import Link */}
+        <div className="mb-8 flex justify-between items-start">
+          <div>
+            <h1 className="text-3xl font-bold text-black mb-2">Cross Country Courses</h1>
+            <p className="text-gray-600">Browse all cross country courses with meet history and performance data</p>
+          </div>
+          <a 
+            href="/courses/import-courses"
+            className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition-colors text-sm font-medium"
+          >
+            Import Courses
+          </a>
         </div>
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow mb-6 p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Search Courses
@@ -163,11 +263,33 @@ export default function CoursesPage() {
               </select>
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Results Filter
+              </label>
+              <div className="flex items-center h-10">
+                <input
+                  type="checkbox"
+                  id="show-with-results"
+                  checked={showWithResults}
+                  onChange={(e) => {
+                    setShowWithResults(e.target.checked)
+                    setCurrentPage(1)
+                  }}
+                  className="h-4 w-4 text-green-600 focus:ring-green-500 border-gray-300 rounded"
+                />
+                <label htmlFor="show-with-results" className="ml-2 text-sm text-gray-700">
+                  Has results only
+                </label>
+              </div>
+            </div>
+
             <div className="flex items-end">
               <button
                 onClick={() => {
                   setSearchTerm('')
                   setSelectedDistance('')
+                  setShowWithResults(false)
                   setCurrentPage(1)
                 }}
                 className="w-full px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700"
@@ -180,7 +302,12 @@ export default function CoursesPage() {
 
         {/* Results Summary */}
         <div className="mb-4 text-sm text-gray-600">
-          Showing {startIndex + 1}-{Math.min(endIndex, filteredCourses.length)} of {filteredCourses.length} courses
+          Showing {startIndex + 1}-{Math.min(endIndex, filteredAndSortedCourses.length)} of {filteredAndSortedCourses.length} courses
+          {sortField !== 'name' && (
+            <span className="ml-2 text-green-600">
+              (sorted by {sortField.replace('_', ' ')} {sortDirection === 'asc' ? '↑' : '↓'})
+            </span>
+          )}
         </div>
 
         {/* Courses Table */}
@@ -189,7 +316,7 @@ export default function CoursesPage() {
             <h2 className="text-2xl font-bold text-black">Course Directory</h2>
           </div>
           
-          {filteredCourses.length === 0 ? (
+          {filteredAndSortedCourses.length === 0 ? (
             <div className="text-center py-12">
               <div className="text-gray-500 mb-4">No courses found matching your criteria.</div>
               <div className="text-sm text-gray-400">
@@ -201,11 +328,11 @@ export default function CoursesPage() {
               <table className="min-w-full">
                 <thead>
                   <tr className="border-b text-left bg-gray-50">
-                    <th className="py-3 px-4 font-bold text-black">Course Name</th>
-                    <th className="py-3 px-4 font-bold text-black">Distance</th>
-                    <th className="py-3 px-4 font-bold text-black">Difficulty</th>
-                    <th className="py-3 px-4 font-bold text-black">Meets</th>
-                    <th className="py-3 px-4 font-bold text-black">Total Results</th>
+                    <SortableHeader field="name">Course Name</SortableHeader>
+                    <SortableHeader field="distance_miles">Distance</SortableHeader>
+                    <SortableHeader field="mile_difficulty">Difficulty</SortableHeader>
+                    <SortableHeader field="meets_count">Meets</SortableHeader>
+                    <SortableHeader field="total_results_count">Total Results</SortableHeader>
                     <th className="py-3 px-4 font-bold text-black">Actions</th>
                   </tr>
                 </thead>

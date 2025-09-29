@@ -25,8 +25,7 @@ export default function AddCourseModal({ isOpen, onClose, onCourseCreated, initi
     name: '',
     distance_meters: 4000, // Default to 4K for your Baylands example
     distance_miles: 2.49,   // 4000 meters = ~2.49 miles
-    difficulty_rating: 50.0,
-    rating: 0
+    mile__difficulty: 1.0,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
