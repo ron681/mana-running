@@ -207,9 +207,7 @@ export async function getCoursesWithRatings() {
  * Meet results with team scoring
  */
 export async function getMeetResultsWithScoring(meetId: string) {
-  const { data: results, error } = await getResultsWithDetails({ meetId });
-  
-  if (error) throw error;
+  const results = await getResultsWithDetails({ meetId });
   if (!results) return { results: [], teamScores: [] };
 
   // Calculate team scores (top 5 scoring system)
