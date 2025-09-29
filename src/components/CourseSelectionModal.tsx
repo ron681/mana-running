@@ -121,7 +121,7 @@ export default function CourseSelectionModal({
                         </div>
                         <div className="text-right">
                           <Badge variant="secondary">
-                            Rating: {course.rating.toFixed(2)}
+                            XC Rating: {course.xc_time_rating.toFixed(3)}
                           </Badge>
                         </div>
                       </div>

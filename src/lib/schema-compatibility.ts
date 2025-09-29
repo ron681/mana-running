@@ -30,7 +30,7 @@ export function getResultTeamPlace(result: any): number | null {
  */
 export function getCourseXCRating(course: any): number {
   // Prefer xc_time_rating, fallback to rating, then default
-  return course.xc_time_rating || course.rating || 1.0;
+return course.xc_time_rating || 1.0;
 }
 
 export function getCourseMileDifficulty(course: any): number {
