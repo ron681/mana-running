@@ -34,6 +34,26 @@ export const athleteCRUD = {
     return data;
   },
 
+// GET: Count total athletes without loading data
+async getTotalCount() {
+  const { count, error } = await supabase
+    .from('athletes')
+    .select('*', { count: 'exact', head: true });
+  
+  if (error) throw error;
+  return count;
+},
+
+// GET: Count total athletes without loading data
+async getTotalCount() {
+  const { count, error } = await supabase
+    .from('athletes')
+    .select('*', { count: 'exact', head: true });
+  
+  if (error) throw error;
+  return count;
+},
+
   // POST: Create new athlete
   async create(athleteData: {
     first_name: string;
