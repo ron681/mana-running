@@ -51,20 +51,20 @@ export default function Home() {
       setError(null)
       
       // Load stats
-      const [schools, athletes, courses, totalResultsCount] = await Promise.all([
-        schoolCRUD.getAll(),
-        athleteCRUD.getAll(),
-        courseCRUD.getAll(),
-        resultCRUD.getTotalCount()
-      ])
+const [schoolsData, _athletes, coursesData, totalResultsCount, athleteCount] = await Promise.all([
+  schoolCRUD.getAll(),
+  Promise.resolve([]),
+  courseCRUD.getAll(),
+  resultCRUD.getTotalCount(),
+  athleteCRUD.getTotalCount()
+])
       
-      setStats({
-        schools: schools?.length || 0,
-        athletes: athletes?.length || 0,
-        courses: courses?.length || 0,
-        results: totalResultsCount || 0
-      })
-
+setStats({
+  schools: schoolsData?.length || 0,
+  athletes: athleteCount || 0,
+  courses: coursesData?.length || 0,
+  results: totalResultsCount || 0
+})
       // Load recent meets (last 10 days)
       const allMeets = await meetCRUD.getAll()
       if (allMeets) {
