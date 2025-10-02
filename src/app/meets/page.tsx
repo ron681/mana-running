@@ -79,20 +79,20 @@ setMeets(processedMeets)
     setCurrentPage(1)
   }
 
-  const sortedMeets = [...meets].sort((a, b) => {
-    let aVal = a[sortField]
-    let bVal = b[sortField]
+const sortedMeets = [...meets].sort((a, b) => {
+  let aVal: string | number = a[sortField]
+  let bVal: string | number = b[sortField]
 
-    // Handle date sorting
-    if (sortField === 'meet_date') {
-      aVal = new Date(aVal).getTime()
-      bVal = new Date(bVal).getTime()
-    }
+  // Handle date sorting
+  if (sortField === 'meet_date') {
+    aVal = new Date(aVal).getTime()
+    bVal = new Date(bVal).getTime()
+  }
 
-    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
-    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
-    return 0
-  })
+  if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1
+  if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1
+  return 0
+})
 
   // Pagination
   const totalPages = Math.ceil(sortedMeets.length / meetsPerPage)
