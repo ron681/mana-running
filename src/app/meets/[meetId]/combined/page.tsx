@@ -197,6 +197,8 @@ export default async function CombinedResultsPage({
       race_name: race.name,
       race_category: race.category,
       race_gender: race.gender,
+      overallPlace: 0, // Default value, will be updated later
+      scoringPlace: 0, // Default value, will be updated later
     };
   });
 
