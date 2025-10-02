@@ -53,35 +53,28 @@ export default function ResultsTable({ boysResults, girlsResults, boysTeamScores
     });
   };
 
-let sortedBoysResults = [...boysResults];
-if (boysSortConfig) {
-  sortedBoysResults.sort((a, b) => {
-    const aVal = a[boysSortConfig.key];
-    const bVal = b[boysSortConfig.key];
-    if (aVal < bVal) {
-      return boysSortConfig.direction === 'asc' ? -1 : 1;
-    }
-    if (aVal > bVal) {
-      return boysSortConfig.direction === 'asc' ? 1 : -1;
-    }
-    return 0;
-  });
-}
+  const sortResults = (results: CombinedResult[], sortConfig: { key: keyof CombinedResult; direction: 'asc' | 'desc' } | null) => {
+    if (!sortConfig) return [...results];
 
-let sortedGirlsResults = [...girlsResults];
-if (girlsSortConfig) {
-  sortedGirlsResults.sort((a, b) => {
-    const aVal = a[girlsSortConfig.key];
-    const bVal = b[girlsSortConfig.key];
-    if (aVal < bVal) {
-      return girlsSortConfig.direction === 'asc' ? -1 : 1;
-    }
-    if (aVal > bVal) {
-      return girlsSortConfig.direction === 'asc' ? 1 : -1;
-    }
-    return 0;
-  });
-}
+    return [...results].sort((a, b) => {
+      const aVal = a[sortConfig.key];
+      const bVal = b[sortConfig.key];
+
+      // Handle null/undefined values: treat as lowest for asc, highest for desc
+      if (aVal === null || aVal === undefined) return sortConfig.direction === 'asc' ? -1 : 1;
+      if (bVal === null || bVal === undefined) return sortConfig.direction === 'asc' ? 1 : -1;
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
+      } else if (typeof aVal === 'string' && typeof bVal === 'string') {
+        return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+      return 0; // Default case if types don't match
+    });
+  };
+
+  const sortedBoysResults = sortResults(boysResults, boysSortConfig);
+  const sortedGirlsResults = sortResults(girlsResults, girlsSortConfig);
 
   return (
     <div id="combined-individual" className="bg-white rounded-lg shadow-md overflow-hidden">
