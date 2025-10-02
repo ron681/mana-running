@@ -14,6 +14,7 @@ interface CombinedResult {
   athlete_grade: string | null
   school_id: string
   team_name: string
+  school_name: string  // ADD THIS LINE
   time_seconds: number
   xc_time: number
   race_name: string
@@ -107,11 +108,12 @@ const { data: results, error: resultsError } = await supabase
 return {
   id: result.id,
   place: index + 1,
-  athlete_id: athlete.id,  // Keep this line
+  athlete_id: athlete.id,
   athlete_name: `${athlete.first_name} ${athlete.last_name}`,
   athlete_grade: getGradeDisplay(athlete.graduation_year, meet.meet_date),
   school_id: school?.id || '',
   team_name: school?.name || 'Unknown School',
+  school_name: school?.name || 'Unknown School',  // ADD THIS LINE
   time_seconds: result.time_seconds,
   xc_time: result.time_seconds * (course?.xc_time_rating || 1),
   race_name: race.name,
