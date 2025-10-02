@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { getGradeDisplay } from '@/lib/grade-utils'
+import React from 'react'
 
 interface RaceResult {
   id: string
@@ -130,21 +131,35 @@ const raceResults: RaceResult[] = results?.map((result) => {
     return acc
   }, {} as Record<string, RaceResult[]>)
 
-  // Calculate team scores (top 5 runners, sum of places)
-  const teamStandings = Object.entries(teamResults)
-    .map(([teamName, runners]) => {
-      const scoringRunners = runners.slice(0, 5)
-      const score = scoringRunners.reduce((sum, runner) => sum + runner.place, 0)
-      return {
-        teamName,
-        score,
-        scoringRunners: scoringRunners.length,
-        totalRunners: runners.length,
-        runners: scoringRunners
-      }
-    })
-    .filter(team => team.scoringRunners >= 5)
-    .sort((a, b) => a.score - b.score)
+// Calculate team scores with proper displacing logic
+const teamStandings = Object.entries(teamResults)
+  .map(([teamName, runners]) => {
+    // Determine runner status
+    const runnersWithStatus = runners.map((runner, index) => {
+      let status: 'counting' | 'displacer' | 'non-scoring';
+      if (index < 5) status = 'counting';
+      else if (index < 7) status = 'displacer';
+      else status = 'non-scoring';
+      
+      return { ...runner, status, teamPlace: index + 1 };
+    });
+
+    const countingRunners = runnersWithStatus.filter(r => r.status === 'counting');
+    const displacers = runnersWithStatus.filter(r => r.status === 'displacer');
+    
+    const score = countingRunners.reduce((sum, runner) => sum + runner.place, 0);
+    
+    return {
+      teamName,
+      score,
+      countingRunners,
+      displacers,
+      nonScoring: runnersWithStatus.filter(r => r.status === 'non-scoring'),
+      totalRunners: runners.length
+    };
+  })
+  .filter(team => team.countingRunners.length >= 5)
+  .sort((a, b) => a.score - b.score);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -346,42 +361,85 @@ const raceResults: RaceResult[] = results?.map((result) => {
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {teamStandings.map((team, index) => (
-                      <tr key={team.teamName} className={`hover:bg-gray-50 ${index < 3 ? 'bg-blue-50' : ''}`}>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <div className="flex items-center">
-                            <span className={`text-sm font-medium ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-600' : index === 2 ? 'text-orange-600' : 'text-gray-900'}`}>
-                              {index + 1}
-                            </span>
-                            {index < 3 && (
-                              <span className="ml-2 text-lg">
-                                {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                          {team.teamName}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                          <span className="font-bold">{team.score}</span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                          <div className="space-x-1">
-                            {team.runners.map((runner, i) => (
-                              <span key={runner.id} className="inline-block">
-                                {runner.place}{i < team.runners.length - 1 ? ',' : ''}
-                              </span>
-                            ))}
-                          </div>
-                          <div className="text-xs text-gray-400 mt-1">
-                            ({team.totalRunners} total runners)
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
+<tbody className="bg-white divide-y divide-gray-200">
+  {teamStandings.map((team, index) => (
+    <React.Fragment key={team.teamName}>
+      <tr className={`hover:bg-gray-50 ${index < 3 ? 'bg-blue-50' : ''}`}>
+        <td className="px-6 py-4 whitespace-nowrap">
+          <div className="flex items-center">
+            <span className={`text-sm font-medium ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-600' : index === 2 ? 'text-orange-600' : 'text-gray-900'}`}>
+              {index + 1}
+            </span>
+            {index < 3 && (
+              <span className="ml-2 text-lg">
+                {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="px-6 py-4 text-sm font-medium text-gray-900">
+          <div>{team.teamName}</div>
+          <div className="text-xs text-gray-500 mt-1">
+            {team.totalRunners} total runners
+          </div>
+        </td>
+        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+          <span className="font-bold">{team.score}</span>
+        </td>
+        <td className="px-6 py-4">
+          <div className="space-y-2">
+            {/* Counting runners (1-5) */}
+            <div>
+              <span className="text-xs font-medium text-green-700">Scorers (1-5):</span>
+              <div className="space-x-1 mt-1">
+                {team.countingRunners.map((runner, i) => (
+                  <span key={runner.id} className="inline-block">
+                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                      #{runner.teamPlace}: {runner.place}
+                    </span>
+                  </span>
+                ))}
+              </div>
+            </div>
+            
+            {/* Displacers (6-7) */}
+            {team.displacers.length > 0 && (
+              <div>
+                <span className="text-xs font-medium text-yellow-700">Displacers (6-7):</span>
+                <div className="space-x-1 mt-1">
+                  {team.displacers.map((runner) => (
+                    <span key={runner.id} className="inline-block">
+                      <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                        #{runner.teamPlace}: {runner.place}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            
+            {/* Non-scoring (8+) */}
+            {team.nonScoring.length > 0 && (
+              <div>
+                <span className="text-xs font-medium text-gray-600">Non-scoring (8+):</span>
+                <div className="space-x-1 mt-1">
+                  {team.nonScoring.map((runner) => (
+                    <span key={runner.id} className="inline-block">
+                      <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                        #{runner.teamPlace}: {runner.place}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </td>
+      </tr>
+    </React.Fragment>
+  ))}
+</tbody>
+
                 </table>
               </div>
             </div>

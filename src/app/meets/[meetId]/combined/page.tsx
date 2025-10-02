@@ -1,6 +1,7 @@
 import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import ResultsTable from './ResultsTable'
 import { formatMeetDate, formatTime } from '@/lib/utils'
 import { getGradeDisplay } from '@/lib/grade-utils'
 
@@ -17,6 +18,8 @@ interface CombinedResult {
   race_name: string
   race_category: string
   race_gender: string
+  overallPlace: number
+  scoringPlace: number
 }
 
 interface Meet {
@@ -83,7 +86,7 @@ function calculateXcTimeTeamScores(results: CombinedResult[]): TeamScore[] {
       athleteGrade: runner.athlete_grade,
       time: runner.time_seconds,
       xcTime: runner.xc_time,
-      overallPlace: runner.place,
+      overallPlace: runner.overallPlace || runner.place,
       teamPlace: index + 1,
       status: index < 5 ? 'counting' : index < 7 ? 'displacer' : 'non-counting',
       resultId: runner.id,
@@ -203,28 +206,36 @@ export default async function CombinedResultsPage({
   const boysTeamScores = calculateXcTimeTeamScores(boyResults);
   const girlsTeamScores = calculateXcTimeTeamScores(girlResults);
 
-  // Prepare qualifying athlete IDs for displacement (top 7 per qualifying team)
-  const qualifyingAthleteIds = new Set<string>();
+  // Prepare qualifying athlete IDs for displacement (top 7 per team, separated by gender)
+  const boysQualifyingAthleteIds = new Set<string>();
   boysTeamScores.forEach(team => {
-    team.runners.slice(0, 7).forEach(runner => qualifyingAthleteIds.add(runner.athleteId));
-  });
-  girlsTeamScores.forEach(team => {
-    team.runners.slice(0, 7).forEach(runner => qualifyingAthleteIds.add(runner.athleteId));
+    team.runners.slice(0, 7).forEach(runner => boysQualifyingAthleteIds.add(runner.athleteId));
   });
 
-  // Sort all combined results for projected individual table
-  const allSortedResults = [...combinedResults].sort((a, b) => a.xc_time - b.xc_time).map((r, i) => ({
+  const girlsQualifyingAthleteIds = new Set<string>();
+  girlsTeamScores.forEach(team => {
+    team.runners.slice(0, 7).forEach(runner => girlsQualifyingAthleteIds.add(runner.athleteId));
+  });
+
+  // Sort and assign scoring places separately for boys and girls
+  const boysSortedResults = [...boyResults].sort((a, b) => a.xc_time - b.xc_time).map((r, i) => ({
     ...r,
     overallPlace: i + 1,
-    scoringPlace: qualifyingAthleteIds.has(r.athlete_id) ? i + 1 : 0,
+    scoringPlace: boysQualifyingAthleteIds.has(r.athlete_id) ? i + 1 : 0,
   }));
 
-  // Update team scores with sum of scoring places for top 5
-  const updateTeamScores = (teamScores: TeamScore[]) => {
+  const girlsSortedResults = [...girlResults].sort((a, b) => a.xc_time - b.xc_time).map((r, i) => ({
+    ...r,
+    overallPlace: i + 1,
+    scoringPlace: girlsQualifyingAthleteIds.has(r.athlete_id) ? i + 1 : 0,
+  }));
+
+  // Update team scores with sum of scoring places for top 5, separated by gender
+  const updateTeamScores = (teamScores: TeamScore[], sortedResults: CombinedResult[]) => {
     teamScores.forEach(team => {
       const top5Runners = team.runners.slice(0, 5);
       team.teamScore = top5Runners.reduce((sum, runner) => {
-        const sortedRunner = allSortedResults.find(r => r.athlete_id === runner.athleteId);
+        const sortedRunner = sortedResults.find(r => r.athlete_id === runner.athleteId);
         return sum + (sortedRunner ? sortedRunner.scoringPlace : 0);
       }, 0);
     });
@@ -234,8 +245,14 @@ export default async function CombinedResultsPage({
     });
   };
 
-  updateTeamScores(boysTeamScores);
-  updateTeamScores(girlsTeamScores);
+  updateTeamScores(boysTeamScores, boysSortedResults);
+  updateTeamScores(girlsTeamScores, girlsSortedResults);
+
+  // Combine results for display, keeping overall place but using gender-specific scoring
+  const allSortedResults = [...boysSortedResults, ...girlsSortedResults].sort((a, b) => a.xc_time - b.xc_time).map((r, i) => ({
+    ...r,
+    overallPlace: i + 1,
+  }));
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -328,39 +345,7 @@ export default async function CombinedResultsPage({
           </div>
         </div>
 
-        <div id="combined-individual" className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">Projected Combined Race Results</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Overall Place</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grade</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">School</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">XC Time</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team Points</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {allSortedResults.map((result) => (
-                  <tr key={result.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{result.overallPlace}</td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{result.athlete_name}</div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.athlete_grade || 'N/A'}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.team_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">{formatTime(result.xc_time / 100)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{result.scoringPlace > 0 ? result.scoringPlace : 0}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
+        <ResultsTable boysResults={boysSortedResults} girlsResults={girlsSortedResults} boysTeamScores={boysTeamScores} girlsTeamScores={girlsTeamScores} />
       </div>
     </div>
   );
