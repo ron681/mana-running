@@ -432,21 +432,20 @@ export const resultCRUD = {
     return data;
   },
 
-// DELETE: Delete single result (ADMIN ONLY)
 async delete(id: string) {
-  await requireAdmin();
-  
-  const { error } = await supabase
-    .from('results')
-    .delete()
-    .eq('id', id);
-  
-  if (error) throw error;
-  return true;
-},
+    await requireAdmin();
+    
+    const { error } = await supabase
+      .from('results')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
+    return true;
+  },   // ← COMMA ADDED
 
-// DELETE: Delete multiple results (ADMIN ONLY)
-async deleteMultiple(ids: string[]) {
+  // DELETE: Delete multiple results (ADMIN ONLY)
+  async deleteMultiple(ids: string[]) {
   await requireAdmin();
   
   const { error } = await supabase
