@@ -17,6 +17,21 @@ export function formatMeetDate(dateString: string): string {
   })
 }
 
+export function formatMeetDateShort(dateString: string): string {
+  const date = new Date(dateString)
+  if (isNaN(date.getTime())) return 'Invalid Date'
+  
+  const days = ['Sun.', 'Mon.', 'Tue.', 'Wed.', 'Thu.', 'Fri.', 'Sat.']
+  const dayName = days[date.getDay()]
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const year = date.getFullYear()
+  
+  return `${dayName} ${month}/${day}/${year}`
+}
+
+
+
 export function formatTime(seconds: number): string {
   if (!seconds || seconds <= 0) return '--:--'
   
