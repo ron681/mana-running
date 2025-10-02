@@ -67,7 +67,17 @@ function calculateXcTimeTeamScores(results: CombinedResult[]): TeamScore[] {
     if (runners.length < 5) continue;
 
     const sortedRunners = runners.sort((a, b) => a.xc_time - b.xc_time);
-    const teamRunners = sortedRunners.map((runner, index) => ({
+    const teamRunners = sortedRunners.map((runner, index): {
+      athleteId: string
+      athleteName: string
+      athleteGrade: string | null
+      time: number
+      xcTime: number
+      overallPlace: number
+      teamPlace: number
+      status: 'counting' | 'displacer' | 'non-counting'
+      resultId: string
+    } => ({
       athleteId: runner.athlete_id,
       athleteName: runner.athlete_name,
       athleteGrade: runner.athlete_grade,
@@ -193,7 +203,7 @@ export default async function CombinedResultsPage({
   const boysTeamScores = calculateXcTimeTeamScores(boyResults);
   const girlsTeamScores = calculateXcTimeTeamScores(girlResults);
 
-  // Prepare qualifying athlete ids for displacement (top 7 per qualifying team)
+  // Prepare qualifying athlete IDs for displacement (top 7 per qualifying team)
   const qualifyingAthleteIds = new Set<string>();
   boysTeamScores.forEach(team => {
     team.runners.slice(0, 7).forEach(runner => qualifyingAthleteIds.add(runner.athleteId));
@@ -206,17 +216,8 @@ export default async function CombinedResultsPage({
   const allSortedResults = [...combinedResults].sort((a, b) => a.xc_time - b.xc_time).map((r, i) => ({
     ...r,
     overallPlace: i + 1,
-    scoringPlace: 0,
+    scoringPlace: qualifyingAthleteIds.has(r.athlete_id) ? i + 1 : 0,
   }));
-
-  // Assign scoring places, skipping non-qualifying runners
-  let scoringCounter = 1;
-  allSortedResults.forEach(result => {
-    if (qualifyingAthleteIds.has(result.athlete_id)) {
-      result.scoringPlace = scoringCounter;
-      scoringCounter++;
-    }
-  });
 
   // Update team scores with sum of scoring places for top 5
   const updateTeamScores = (teamScores: TeamScore[]) => {
@@ -235,11 +236,6 @@ export default async function CombinedResultsPage({
 
   updateTeamScores(boysTeamScores);
   updateTeamScores(girlsTeamScores);
-
-  // Update team points in individual results (scoring place for scoring runners, 0 otherwise)
-  allSortedResults.forEach(result => {
-    result.teamPoints = result.scoringPlace;
-  });
 
   return (
     <div className="container mx-auto px-4 py-8">
