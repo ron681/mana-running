@@ -53,29 +53,31 @@ export default function ResultsTable({ boysResults, girlsResults, boysTeamScores
     });
   };
 
-  let sortedBoysResults = [...boysResults];
-if (boysSortConfig !== null) {
-  const config = boysSortConfig; // Capture in const for type narrowing
+let sortedBoysResults = [...boysResults];
+if (boysSortConfig) {
   sortedBoysResults.sort((a, b) => {
-    if (a[config.key] < b[config.key]) {
-      return config.direction === 'asc' ? -1 : 1;
+    const aVal = a[boysSortConfig.key];
+    const bVal = b[boysSortConfig.key];
+    if (aVal < bVal) {
+      return boysSortConfig.direction === 'asc' ? -1 : 1;
     }
-    if (a[config.key] > b[config.key]) {
-      return config.direction === 'asc' ? 1 : -1;
+    if (aVal > bVal) {
+      return boysSortConfig.direction === 'asc' ? 1 : -1;
     }
     return 0;
   });
 }
 
 let sortedGirlsResults = [...girlsResults];
-if (girlsSortConfig !== null) {
-  const config = girlsSortConfig; // Capture in const for type narrowing
+if (girlsSortConfig) {
   sortedGirlsResults.sort((a, b) => {
-    if (a[config.key] < b[config.key]) {
-      return config.direction === 'asc' ? -1 : 1;
+    const aVal = a[girlsSortConfig.key];
+    const bVal = b[girlsSortConfig.key];
+    if (aVal < bVal) {
+      return girlsSortConfig.direction === 'asc' ? -1 : 1;
     }
-    if (a[config.key] > b[config.key]) {
-      return config.direction === 'asc' ? 1 : -1;
+    if (aVal > bVal) {
+      return girlsSortConfig.direction === 'asc' ? 1 : -1;
     }
     return 0;
   });
