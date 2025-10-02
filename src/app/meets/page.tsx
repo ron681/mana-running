@@ -56,7 +56,9 @@ export default function MeetsPage() {
         name: meet.name,
         meet_date: meet.meet_date,
         meet_type: meet.meet_type,
-venue: meet.races?.[0]?.course?.name?.split('|')[0].trim() || 'N/A',
+venue: Array.isArray(meet.races?.[0]?.course) 
+  ? meet.races[0].course[0]?.name?.split('|')[0].trim() || 'N/A'
+  : meet.races?.[0]?.course?.name?.split('|')[0].trim() || 'N/A',
         race_count: meet.races?.length || 0
       })) || []
 
