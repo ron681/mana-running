@@ -51,20 +51,23 @@ export default function MeetsPage() {
 
       if (error) throw error
 
-      const processedMeets: Meet[] = meetsData?.map(meet => ({
-        id: meet.id,
-        name: meet.name,
-        meet_date: meet.meet_date,
-        meet_type: meet.meet_type,
-venue: Array.isArray(meet.races?.[0]?.course) 
-venue: ((meet.races?.[0]?.course as any)?.[0]?.name || (meet.races?.[0]?.course as any)?.name || 'N/A').split('|')[0].trim(),
-      setMeets(processedMeets)
+const processedMeets: Meet[] = meetsData?.map(meet => ({
+  id: meet.id,
+  name: meet.name,
+  meet_date: meet.meet_date,
+  meet_type: meet.meet_type,
+  venue: ((meet.races?.[0]?.course as any)?.[0]?.name || (meet.races?.[0]?.course as any)?.name || 'N/A').split('|')[0].trim(),
+  race_count: meet.races?.length || 0
+})) || []
+
+setMeets(processedMeets)
     } catch (error) {
       console.error('Error loading meets:', error)
     } finally {
       setLoading(false)
     }
   }
+
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
