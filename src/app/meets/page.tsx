@@ -57,11 +57,7 @@ export default function MeetsPage() {
         meet_date: meet.meet_date,
         meet_type: meet.meet_type,
 venue: Array.isArray(meet.races?.[0]?.course) 
-  ? meet.races[0].course[0]?.name?.split('|')[0].trim() || 'N/A'
-  : meet.races?.[0]?.course?.name?.split('|')[0].trim() || 'N/A',
-        race_count: meet.races?.length || 0
-      })) || []
-
+venue: ((meet.races?.[0]?.course as any)?.[0]?.name || (meet.races?.[0]?.course as any)?.name || 'N/A').split('|')[0].trim(),
       setMeets(processedMeets)
     } catch (error) {
       console.error('Error loading meets:', error)
