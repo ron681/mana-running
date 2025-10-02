@@ -1,6 +1,7 @@
 // lib/crud-operations.ts - Updated for new rating system
 
 import { supabase } from './supabase';
+import { requireAdmin } from './auth/admin';
 
 // ==================== ATHLETE CRUD OPERATIONS ====================
 
@@ -202,31 +203,33 @@ async create(meetData: {
     return data;
   },
 
-  // DELETE: Delete meet and all results
-  async delete(id: string) {
-    // Get result count for confirmation
-    const { data: results } = await supabase
+// DELETE: Delete meet and all results (ADMIN ONLY)
+async delete(id: string) {
+  await requireAdmin();
+  
+  // Get result count for confirmation
+  const { data: results } = await supabase
+    .from('results')
+    .select('id')
+    .eq('meet_id', id);
+
+  // Delete all results for this meet
+  if (results && results.length > 0) {
+    await supabase
       .from('results')
-      .select('id')
-      .eq('meet_id', id);
-
-    // Delete all results for this meet
-    if (results && results.length > 0) {
-      await supabase
-        .from('results')
-        .delete()
-        .eq('meet_id', id);
-    }
-
-    // Delete meet
-    const { error } = await supabase
-      .from('meets')
       .delete()
-      .eq('id', id);
-    
-    if (error) throw error;
-    return { deletedResultsCount: results?.length || 0 };
+      .eq('meet_id', id);
   }
+
+  // Delete meet
+  const { error } = await supabase
+    .from('meets')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+  return { deletedResultsCount: results?.length || 0 };
+}
 };
 
 // ==================== COURSE CRUD OPERATIONS ====================
@@ -429,27 +432,31 @@ export const resultCRUD = {
     return data;
   },
 
-  // DELETE: Delete single result
-  async delete(id: string) {
-    const { error } = await supabase
-      .from('results')
-      .delete()
-      .eq('id', id);
-    
-    if (error) throw error;
-    return true;
-  },
+// DELETE: Delete single result (ADMIN ONLY)
+async delete(id: string) {
+  await requireAdmin();
+  
+  const { error } = await supabase
+    .from('results')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+  return true;
+},
 
-  // DELETE: Delete multiple results
-  async deleteMultiple(ids: string[]) {
-    const { error } = await supabase
-      .from('results')
-      .delete()
-      .in('id', ids);
-    
-    if (error) throw error;
-    return true;
-  },
+// DELETE: Delete multiple results (ADMIN ONLY)
+async deleteMultiple(ids: string[]) {
+  await requireAdmin();
+  
+  const { error } = await supabase
+    .from('results')
+    .delete()
+    .in('id', ids);
+  
+  if (error) throw error;
+  return true;
+}
   
   // GET: Search results across entire database
   async searchAllResults(searchQuery = '', limit = 5000) {
@@ -607,29 +614,31 @@ export const raceCRUD = {
     return data;
   },
 
-  // DELETE: Delete race and all results
-  async delete(id: string) {
-    // Get result count for confirmation
-    const { data: results } = await supabase
+// DELETE: Delete race and all results (ADMIN ONLY)
+async delete(id: string) {
+  await requireAdmin();
+  
+  // Get result count for confirmation
+  const { data: results } = await supabase
+    .from('results')
+    .select('id')
+    .eq('race_id', id);
+
+  // Delete all results for this race
+  if (results && results.length > 0) {
+    await supabase
       .from('results')
-      .select('id')
-      .eq('race_id', id);
-
-    // Delete all results for this race
-    if (results && results.length > 0) {
-      await supabase
-        .from('results')
-        .delete()
-        .eq('race_id', id);
-    }
-
-    // Delete race
-    const { error } = await supabase
-      .from('races')
       .delete()
-      .eq('id', id);
-    
-    if (error) throw error;
-    return { deletedResultsCount: results?.length || 0 };
+      .eq('race_id', id);
   }
+
+  // Delete race
+  const { error } = await supabase
+    .from('races')
+    .delete()
+    .eq('id', id);
+  
+  if (error) throw error;
+  return { deletedResultsCount: results?.length || 0 };
+}
 };

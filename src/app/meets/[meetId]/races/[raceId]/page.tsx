@@ -6,6 +6,9 @@ import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { getGradeDisplay } from '@/lib/grade-utils'
 import React from 'react'
+import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
+import { deleteAllRaceResults, deleteRace, deleteResult } from '@/app/actions/delete-operations'
+import { isAdmin } from '@/lib/auth/admin'
 
 interface RaceResult {
   id: string
@@ -41,7 +44,7 @@ export default async function RaceResultsPage({
   params: { meetId: string; raceId: string }
 }) {
   const supabase = createServerComponentClient({ cookies })
-  
+  const admin = await isAdmin()
   // Get race details with meet info
   const { data: race, error: raceError } = await supabase
     .from('races')
@@ -128,6 +131,7 @@ const raceResults: RaceResult[] = results?.map((result) => {
       acc[result.team_name] = []
     }
     acc[result.team_name].push(result)
+    
     return acc
   }, {} as Record<string, RaceResult[]>)
 
@@ -161,6 +165,58 @@ const teamStandings = Object.entries(teamResults)
   .filter(team => team.countingRunners.length >= 5)
   .sort((a, b) => a.score - b.score);
 
+  
+  function DeleteRaceActions({ raceId, meetId }: { raceId: string; meetId: string }) {
+    'use client'
+    
+    const handleDeleteResults = async () => {
+      await deleteAllRaceResults(raceId)
+      window.location.reload()
+    }
+
+    const handleDeleteRace = async () => {
+      await deleteRace(raceId, meetId)
+      window.location.href = `/meets/${meetId}`
+    }
+
+    return (
+      <div className="flex gap-2">
+        <DeleteConfirmationDialog
+          title="Delete All Results"
+          description="This will permanently delete all results from this race. This action cannot be undone."
+          onConfirm={handleDeleteResults}
+          buttonText="Delete Results"
+        />
+        <DeleteConfirmationDialog
+          title="Delete Entire Race"
+          description="This will permanently delete this race and all its results. This action cannot be undone."
+          onConfirm={handleDeleteRace}
+          buttonText="Delete Race"
+        />
+      </div>
+    )
+  }
+
+  function DeleteResultButton({ resultId, raceId }: { resultId: string; raceId: string }) {
+    'use client'
+    
+    const handleDelete = async () => {
+      await deleteResult(resultId, raceId)
+      window.location.reload()
+    }
+
+    return (
+      <DeleteConfirmationDialog
+        title="Delete Result"
+        description="This will permanently delete this athlete's result. This action cannot be undone."
+        onConfirm={handleDelete}
+        buttonText=""
+        size="icon"
+      />
+    )
+  }
+  
+      
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
@@ -172,11 +228,14 @@ const teamStandings = Object.entries(teamResults)
           ← Back to Meet
         </Link>
         
-        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">
-            {race.category} {race.gender === 'M' ? 'Boys' : 'Girls'}
-          </h1>
-          
+<div className="bg-white rounded-lg shadow-md p-6 mb-6">
+  <div className="flex justify-between items-center mb-4">
+    <h1 className="text-3xl font-bold text-gray-900">
+      {race.category} {race.gender === 'M' ? 'Boys' : 'Girls'}
+    </h1>
+    {admin && <DeleteRaceActions raceId={params.raceId} meetId={params.meetId} />}
+  </div>
+            
           <div className="grid md:grid-cols-2 gap-4 text-gray-600 mb-4">
             <div>
               <p className="mb-2"><strong>Meet:</strong> {meet?.name}</p>
@@ -256,8 +315,13 @@ const teamStandings = Object.entries(teamResults)
                       Team
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Time
-                    </th>
+  Time
+</th>
+{admin && (
+  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
+    Actions
+  </th>
+)}
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -294,8 +358,13 @@ const teamStandings = Object.entries(teamResults)
                         {result.team_name}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-                        {result.time_seconds ? formatTime(result.time_seconds) : 'DNF'}
-                      </td>
+  {result.time_seconds ? formatTime(result.time_seconds) : 'DNF'}
+</td>
+{admin && (
+  <td className="px-6 py-4 whitespace-nowrap text-right">
+    <DeleteResultButton resultId={result.id} raceId={params.raceId} />
+  </td>
+)}
                     </tr>
                   ))}
                   
