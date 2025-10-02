@@ -48,9 +48,6 @@ export default function RootLayout({
                 <a href="/athletes" className="px-4 py-2 bg-orange-600 rounded hover:bg-orange-500 transition-colors">
                   Athletes
                 </a>
-                <a href="/search" className="px-4 py-2 bg-purple-600 rounded hover:bg-purple-500 transition-colors">
-                  Search
-                </a>
                 <a href="/admin" className="px-4 py-2 bg-yellow-600 rounded hover:bg-yellow-500 transition-colors">
                   Admin
                 </a>
