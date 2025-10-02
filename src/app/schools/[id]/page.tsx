@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { schoolCRUD, athleteCRUD } from '@/lib/crud-operations'
+import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
 
 interface School {
   id: string
@@ -26,6 +27,8 @@ interface Props {
     id: string
   }
 }
+
+const supabase = createClientComponentClient()
 
 export default function SchoolPage({ params }: Props) {
   const [school, setSchool] = useState<School | null>(null)
@@ -57,11 +60,17 @@ export default function SchoolPage({ params }: Props) {
       
       setSchool(currentSchool)
 
-      // Load all athletes and filter for this school
-      const allAthletes = await athleteCRUD.getAll()
-      const schoolAthletes = allAthletes?.filter(athlete => 
-        athlete.current_school_id === params.id
-      ) || []
+    // Load only athletes for this school
+const { data: schoolAthletes, error: athletesError } = await supabase
+  .from('athletes')
+  .select(`
+    *,
+    school:schools(id, name)
+  `)
+  .eq('current_school_id', params.id)
+  .order('last_name')
+
+if (athletesError) throw athletesError
 
       setAthletes(schoolAthletes)
     } catch (err) {
@@ -343,29 +352,72 @@ export default function SchoolPage({ params }: Props) {
         </div>
 
         {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between mt-8 pt-4 border-t">
-            <div className="text-sm text-gray-600">
-              Page {currentPage} of {totalPages}
-            </div>
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
-                disabled={currentPage === 1}
-                className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
-                disabled={currentPage === totalPages}
-                className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        )}
+       {/* Pagination */}
+{totalPages > 1 && (
+  <div className="flex items-center justify-between mt-8 pt-4 border-t">
+    <div className="text-sm text-gray-600">
+      Page {currentPage} of {totalPages}
+    </div>
+    <div className="flex items-center space-x-2">
+      <button
+        onClick={() => setCurrentPage(1)}
+        disabled={currentPage === 1}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        First
+      </button>
+      <button
+        onClick={() => setCurrentPage(Math.max(1, currentPage - 10))}
+        disabled={currentPage <= 10}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        -10
+      </button>
+      <button
+        onClick={() => setCurrentPage(Math.max(1, currentPage - 5))}
+        disabled={currentPage <= 5}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        -5
+      </button>
+      <button
+        onClick={() => setCurrentPage(Math.max(1, currentPage - 1))}
+        disabled={currentPage === 1}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        Previous
+      </button>
+      <button
+        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 1))}
+        disabled={currentPage === totalPages}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        Next
+      </button>
+      <button
+        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 5))}
+        disabled={currentPage > totalPages - 5}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        +5
+      </button>
+      <button
+        onClick={() => setCurrentPage(Math.min(totalPages, currentPage + 10))}
+        disabled={currentPage > totalPages - 10}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        +10
+      </button>
+      <button
+        onClick={() => setCurrentPage(totalPages)}
+        disabled={currentPage === totalPages}
+        className="px-3 py-2 border rounded text-black disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50"
+      >
+        Last
+      </button>
+    </div>
+  </div>
+)}
 
         {/* Back Button */}
         <div className="mt-6">
