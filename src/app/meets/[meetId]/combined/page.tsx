@@ -1,10 +1,8 @@
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { supabase } from '@/lib/supabase'
 import Link from 'next/link'
-import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
+import { formatMeetDate, formatTime } from '@/lib/utils'
 import { getGradeDisplay } from '@/lib/grade-utils'
-import { calculateXcTimeTeamScores } from '@/lib/teamScoring'
 
 interface CombinedResult {
   id: string
@@ -14,9 +12,8 @@ interface CombinedResult {
   athlete_grade: string | null
   school_id: string
   team_name: string
-  school_name: string  // ADD THIS LINE
-  time_seconds: number
-  xc_time: number
+  time_seconds: number // In centiseconds
+  xc_time: number // In centiseconds
   race_name: string
   race_category: string
   race_gender: string
@@ -35,20 +32,81 @@ interface Meet {
   }[]
 }
 
+interface TeamScore {
+  schoolId: string
+  schoolName: string
+  place: number
+  totalTime: number // In centiseconds
+  teamScore: number // Sum of top 5 scoring places
+  runners: {
+    athleteId: string
+    athleteName: string
+    athleteGrade: string | null
+    time: number // In centiseconds
+    xcTime: number // In centiseconds
+    overallPlace: number
+    teamPlace: number
+    status: 'counting' | 'displacer' | 'non-counting'
+    resultId: string
+  }[]
+}
+
+function calculateXcTimeTeamScores(results: CombinedResult[]): TeamScore[] {
+  const schoolMap = new Map<string, CombinedResult[]>();
+  for (const result of results) {
+    if (result.school_id) {
+      if (!schoolMap.has(result.school_id)) {
+        schoolMap.set(result.school_id, []);
+      }
+      schoolMap.get(result.school_id)!.push(result);
+    }
+  }
+
+  const teamScores: TeamScore[] = [];
+  for (const [schoolId, runners] of schoolMap) {
+    if (runners.length < 5) continue;
+
+    const sortedRunners = runners.sort((a, b) => a.xc_time - b.xc_time);
+    const teamRunners = sortedRunners.map((runner, index) => ({
+      athleteId: runner.athlete_id,
+      athleteName: runner.athlete_name,
+      athleteGrade: runner.athlete_grade,
+      time: runner.time_seconds,
+      xcTime: runner.xc_time,
+      overallPlace: runner.place,
+      teamPlace: index + 1,
+      status: index < 5 ? 'counting' : index < 7 ? 'displacer' : 'non-counting',
+      resultId: runner.id,
+    }));
+
+    const totalTime = teamRunners.slice(0, 5).reduce((sum, runner) => sum + runner.xcTime, 0);
+
+    teamScores.push({
+      schoolId,
+      schoolName: runners[0].team_name,
+      place: 0,
+      totalTime,
+      teamScore: 0, // Will be set later
+      runners: teamRunners,
+    });
+  }
+
+  return teamScores;
+}
+
 export default async function CombinedResultsPage({
-  params
+  params,
 }: {
   params: { meetId: string }
 }) {
-  const supabase = createServerComponentClient({ cookies })
-  
-  // Get meet details with course XC Time rating
-  const { data: meet, error: meetError } = await supabase
+  const supabaseClient = supabase;
+
+  const { data: meet, error: meetError } = await supabaseClient
     .from('meets')
     .select(`
-      id, 
-      name, 
-      meet_date, 
+      id,
+      name,
+      meet_date,
       meet_type,
       courses(
         id,
@@ -58,95 +116,140 @@ export default async function CombinedResultsPage({
       )
     `)
     .eq('id', params.meetId)
-    .single()
+    .single();
 
   if (meetError || !meet) {
-    notFound()
+    console.error('Error fetching meet:', meetError);
+    notFound();
   }
 
-  const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses
+  const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses;
+  if (!course?.xc_time_rating) {
+    console.error('Missing xc_time_rating for course:', course);
+    return <div>Error: Course rating not found</div>;
+  }
 
-// Get all results with school info
-const { data: results, error: resultsError } = await supabase
-  .from('results')
-  .select(`
-    id,
-    place_overall,
-    time_seconds,
-    athletes!inner(
+  const { data: results, error: resultsError } = await supabaseClient
+    .from('results')
+    .select(`
       id,
-      first_name,
-      last_name,
-      graduation_year,
-      school_id,
-      schools(
+      place_overall,
+      time_seconds,
+      meet_id,
+      race_id,
+      athletes!inner(
         id,
-        name
+        first_name,
+        last_name,
+        graduation_year,
+        current_school_id,
+        schools(
+          id,
+          name
+        )
+      ),
+      races!inner(
+        id,
+        name,
+        category,
+        gender
       )
-    ),
-    races!inner(
-      name,
-      category,
-      gender
-    )
-  `)
-  .eq('meet_id', params.meetId)
-  .not('time_seconds', 'is', null)
-  .order('time_seconds', { ascending: true })
+    `)
+    .eq('meet_id', params.meetId)
+    .not('time_seconds', 'is', null)
+    .order('time_seconds', { ascending: true });
 
-  if (resultsError) {
-    console.error('Error fetching results:', resultsError)
-    return <div>Error loading results</div>
+  if (resultsError || !results) {
+    console.error('Error fetching results:', resultsError);
+    return <div>Error loading results</div>;
   }
 
-  // Calculate XC Time for each result
-  const combinedResults: CombinedResult[] = results?.map((result, index) => {
-    const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes
-    const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null
-    const race = Array.isArray(result.races) ? result.races[0] : result.races
+  const combinedResults: CombinedResult[] = results.map((result, index) => {
+    const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes;
+    const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null;
+    const race = Array.isArray(result.races) ? result.races[0] : result.races;
 
-return {
-  id: result.id,
-  place: index + 1,
-  athlete_id: athlete.id,
-  athlete_name: `${athlete.first_name} ${athlete.last_name}`,
-  athlete_grade: getGradeDisplay(athlete.graduation_year, meet.meet_date),
-  school_id: school?.id || '',
-  team_name: school?.name || 'Unknown School',
-  school_name: school?.name || 'Unknown School',  // ADD THIS LINE
-  time_seconds: result.time_seconds,
-  xc_time: result.time_seconds * (course?.xc_time_rating || 1),
-  race_name: race.name,
-  race_category: race.category,
-  race_gender: race.gender
-}
-  }) || []
+    const timeInCentiseconds = result.time_seconds * 100;
 
-  // Separate by gender
-  const boyResults = combinedResults.filter(r => r.race_gender === 'M')
-  const girlResults = combinedResults.filter(r => r.race_gender === 'F')
+    return {
+      id: result.id,
+      place: index + 1,
+      athlete_id: athlete.id,
+      athlete_name: `${athlete.first_name} ${athlete.last_name}`,
+      athlete_grade: getGradeDisplay(athlete.graduation_year, meet.meet_date),
+      school_id: school?.id || '',
+      team_name: school?.name || 'Unknown School',
+      time_seconds: timeInCentiseconds,
+      xc_time: timeInCentiseconds * course.xc_time_rating,
+      race_name: race.name,
+      race_category: race.category,
+      race_gender: race.gender,
+    };
+  });
 
-  // Calculate team scores for each gender
-  const boysTeamScores = calculateXcTimeTeamScores(boyResults)
-  const girlsTeamScores = calculateXcTimeTeamScores(girlResults)
+  const boyResults = combinedResults.filter(r => r.race_gender === 'M');
+  const girlResults = combinedResults.filter(r => r.race_gender === 'F');
 
-  // Re-sort individual results by XC Time and assign places
-  const boysSorted = [...boyResults].sort((a, b) => a.xc_time - b.xc_time)
-    .map((r, i) => ({ ...r, place: i + 1 }))
-  const girlsSorted = [...girlResults].sort((a, b) => a.xc_time - b.xc_time)
-    .map((r, i) => ({ ...r, place: i + 1 }))
+  const boysTeamScores = calculateXcTimeTeamScores(boyResults);
+  const girlsTeamScores = calculateXcTimeTeamScores(girlResults);
+
+  // Prepare qualifying athlete ids for displacement (top 7 per qualifying team)
+  const qualifyingAthleteIds = new Set<string>();
+  boysTeamScores.forEach(team => {
+    team.runners.slice(0, 7).forEach(runner => qualifyingAthleteIds.add(runner.athleteId));
+  });
+  girlsTeamScores.forEach(team => {
+    team.runners.slice(0, 7).forEach(runner => qualifyingAthleteIds.add(runner.athleteId));
+  });
+
+  // Sort all combined results for projected individual table
+  const allSortedResults = [...combinedResults].sort((a, b) => a.xc_time - b.xc_time).map((r, i) => ({
+    ...r,
+    overallPlace: i + 1,
+    scoringPlace: 0,
+  }));
+
+  // Assign scoring places, skipping non-qualifying runners
+  let scoringCounter = 1;
+  allSortedResults.forEach(result => {
+    if (qualifyingAthleteIds.has(result.athlete_id)) {
+      result.scoringPlace = scoringCounter;
+      scoringCounter++;
+    }
+  });
+
+  // Update team scores with sum of scoring places for top 5
+  const updateTeamScores = (teamScores: TeamScore[]) => {
+    teamScores.forEach(team => {
+      const top5Runners = team.runners.slice(0, 5);
+      team.teamScore = top5Runners.reduce((sum, runner) => {
+        const sortedRunner = allSortedResults.find(r => r.athlete_id === runner.athleteId);
+        return sum + (sortedRunner ? sortedRunner.scoringPlace : 0);
+      }, 0);
+    });
+    teamScores.sort((a, b) => a.teamScore - b.teamScore);
+    teamScores.forEach((team, index) => {
+      team.place = index + 1;
+    });
+  };
+
+  updateTeamScores(boysTeamScores);
+  updateTeamScores(girlsTeamScores);
+
+  // Update team points in individual results (scoring place for scoring runners, 0 otherwise)
+  allSortedResults.forEach(result => {
+    result.teamPoints = result.scoringPlace;
+  });
 
   return (
     <div className="container mx-auto px-4 py-8">
-      {/* Header */}
       <div className="mb-8">
-        <Link 
+        <Link
           href={`/meets/${params.meetId}`}
           className="text-blue-600 hover:text-blue-800 mb-4 inline-block"
         >
           ← Back to Meet
         </Link>
-        
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
             Combined Results - {meet.name}
@@ -154,219 +257,108 @@ return {
           <p className="text-gray-600 mb-4">
             {formatMeetDate(meet.meet_date)} • {meet.meet_type} • {course?.name} ({((course?.distance_meters || 0) / 1609.34).toFixed(2)} mi)
           </p>
-          <p className="text-sm text-gray-600 mb-2">
-            XC Time Rating: {course?.xc_time_rating?.toFixed(3) || 'N/A'}
-          </p>
           <p className="text-lg font-medium text-gray-900">
             {combinedResults.length} total finishers • {boysTeamScores.length} boys teams • {girlsTeamScores.length} girls teams
           </p>
         </div>
       </div>
 
-      {/* Navigation */}
-      <div className="mb-6 flex gap-2 flex-wrap">
-        <a href="#boys-team" className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium">
-          Boys Team Scores
-        </a>
-        <a href="#girls-team" className="bg-pink-600 hover:bg-pink-700 text-white px-4 py-2 rounded-lg font-medium">
-          Girls Team Scores
-        </a>
-        <a href="#boys-individual" className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium">
-          Boys Individual
-        </a>
-        <a href="#girls-individual" className="bg-gray-200 hover:bg-gray-300 text-gray-700 px-4 py-2 rounded-lg font-medium">
-          Girls Individual
-        </a>
-      </div>
-
       <div className="space-y-8">
-        {/* Boys Team Scores */}
         <div id="boys-team" className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="px-6 py-4 bg-blue-50 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">Boys Team Scores (XC Time)</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Boys Team Scores</h2>
           </div>
-          <div className="p-6 space-y-6">
-            {boysTeamScores.map((team) => (
-              <div key={team.schoolId} className="border-b pb-4 last:border-b-0">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">
-                      {team.place}. {team.schoolName}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      Total XC Time: {team.totalTime.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Place</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">XC Time</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <div className="p-6">
+            {boysTeamScores.length === 0 ? (
+              <p className="text-gray-600">No boys teams with sufficient runners</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team Place</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">School</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team Score</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {boysTeamScores.map((team) => (
+                      <tr key={team.schoolId}>
+                        <td className="px-4 py-2 whitespace-nowrap font-medium">{team.place}</td>
+                        <td className="px-4 py-2">{team.schoolName}</td>
+                        <td className="px-4 py-2 whitespace-nowrap font-medium">{team.teamScore}</td>
+                        <td className="px-4 py-2 font-mono">{formatTime(team.totalTime / 100)}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {team.runners.map((runner) => (
-                        <tr key={runner.athleteId} className={
-                          runner.status === 'counting' ? 'bg-green-50' :
-                          runner.status === 'displacer' ? 'bg-yellow-50' : ''
-                        }>
-                          <td className="px-3 py-2 whitespace-nowrap font-medium">{runner.overallPlace}</td>
-                          <td className="px-3 py-2">
-                            {runner.athleteName}
-                            {runner.athleteGrade && <span className="text-gray-500 ml-1">({runner.athleteGrade})</span>}
-                          </td>
-                          <td className="px-3 py-2 font-mono">{formatTime(runner.time)}</td>
-                          <td className="px-3 py-2 font-mono">{runner.xcTime?.toFixed(2)}</td>
-                          <td className="px-3 py-2">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              runner.status === 'counting' ? 'bg-green-100 text-green-800' :
-                              runner.status === 'displacer' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {runner.status === 'counting' ? `Scorer #${runner.teamPlace}` :
-                               runner.status === 'displacer' ? `Displacer #${runner.teamPlace}` :
-                               `Non-scoring #${runner.teamPlace}`}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            )}
           </div>
         </div>
 
-        {/* Girls Team Scores */}
         <div id="girls-team" className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="px-6 py-4 bg-pink-50 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">Girls Team Scores (XC Time)</h2>
+            <h2 className="text-xl font-semibold text-gray-900">Girls Team Scores</h2>
           </div>
-          <div className="p-6 space-y-6">
-            {girlsTeamScores.map((team) => (
-              <div key={team.schoolId} className="border-b pb-4 last:border-b-0">
-                <div className="flex items-center justify-between mb-3">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">
-                      {team.place}. {team.schoolName}
-                    </h3>
-                    <p className="text-sm text-gray-600">
-                      Total XC Time: {team.totalTime.toFixed(2)}
-                    </p>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Place</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">XC Time</th>
-                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+          <div className="p-6">
+            {girlsTeamScores.length === 0 ? (
+              <p className="text-gray-600">No girls teams with sufficient runners</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team Place</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">School</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team Score</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Team Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {girlsTeamScores.map((team) => (
+                      <tr key={team.schoolId}>
+                        <td className="px-4 py-2 whitespace-nowrap font-medium">{team.place}</td>
+                        <td className="px-4 py-2">{team.schoolName}</td>
+                        <td className="px-4 py-2 whitespace-nowrap font-medium">{team.teamScore}</td>
+                        <td className="px-4 py-2 font-mono">{formatTime(team.totalTime / 100)}</td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200">
-                      {team.runners.map((runner) => (
-                        <tr key={runner.athleteId} className={
-                          runner.status === 'counting' ? 'bg-green-50' :
-                          runner.status === 'displacer' ? 'bg-yellow-50' : ''
-                        }>
-                          <td className="px-3 py-2 whitespace-nowrap font-medium">{runner.overallPlace}</td>
-                          <td className="px-3 py-2">
-                            {runner.athleteName}
-                            {runner.athleteGrade && <span className="text-gray-500 ml-1">({runner.athleteGrade})</span>}
-                          </td>
-                          <td className="px-3 py-2 font-mono">{formatTime(runner.time)}</td>
-                          <td className="px-3 py-2 font-mono">{runner.xcTime?.toFixed(2)}</td>
-                          <td className="px-3 py-2">
-                            <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-                              runner.status === 'counting' ? 'bg-green-100 text-green-800' :
-                              runner.status === 'displacer' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {runner.status === 'counting' ? `Scorer #${runner.teamPlace}` :
-                               runner.status === 'displacer' ? `Displacer #${runner.teamPlace}` :
-                               `Non-scoring #${runner.teamPlace}`}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-            ))}
+            )}
           </div>
         </div>
 
-        {/* Boys Individual Results */}
-        <div id="boys-individual" className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="px-6 py-4 bg-blue-50 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">Boys Individual Results</h2>
+        <div id="combined-individual" className="bg-white rounded-lg shadow-md overflow-hidden">
+          <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+            <h2 className="text-xl font-semibold text-gray-900">Projected Combined Race Results</h2>
           </div>
           <div className="overflow-x-auto">
-            <table className="min-w-full">
+            <table className="min-w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Place</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Overall Place</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Grade</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">School</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">XC Time</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team Points</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {boysSorted.slice(0, 50).map((result) => (
+                {allSortedResults.map((result) => (
                   <tr key={result.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{result.place}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{result.overallPlace}</td>
                     <td className="px-6 py-4">
                       <div className="text-sm font-medium text-gray-900">{result.athlete_name}</div>
-                      {result.athlete_grade && <div className="text-sm text-gray-500">Grade {result.athlete_grade}</div>}
                     </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.athlete_grade || 'N/A'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.team_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">{formatTime(result.time_seconds)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">{result.xc_time.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {/* Girls Individual Results */}
-        <div id="girls-individual" className="bg-white rounded-lg shadow-md overflow-hidden">
-          <div className="px-6 py-4 bg-pink-50 border-b border-gray-200">
-            <h2 className="text-xl font-semibold text-gray-900">Girls Individual Results</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Place</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Team</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Time</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">XC Time</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {girlsSorted.slice(0, 50).map((result) => (
-                  <tr key={result.id} className="hover:bg-gray-50">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{result.place}</td>
-                    <td className="px-6 py-4">
-                      <div className="text-sm font-medium text-gray-900">{result.athlete_name}</div>
-                      {result.athlete_grade && <div className="text-sm text-gray-500">Grade {result.athlete_grade}</div>}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{result.team_name}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">{formatTime(result.time_seconds)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">{result.xc_time.toFixed(2)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-mono">{formatTime(result.xc_time / 100)}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{result.scoringPlace > 0 ? result.scoringPlace : 0}</td>
                   </tr>
                 ))}
               </tbody>
@@ -375,5 +367,5 @@ return {
         </div>
       </div>
     </div>
-  )
+  );
 }

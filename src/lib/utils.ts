@@ -40,10 +40,10 @@ export function formatTime(seconds: number): string {
   const totalSeconds = Math.floor(seconds / 100)
   const minutes = Math.floor(totalSeconds / 60)
   const remainingSeconds = totalSeconds % 60
-  const hundredths = seconds % 100
-  
+  const hundredths = Math.round(seconds % 100);
   return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}.${hundredths.toString().padStart(2, '0')}`
 }
+
 
 export function parseTime(timeString: string): number | null {
   if (!timeString || timeString.trim() === '') return null
