@@ -17,7 +17,6 @@ export default function ImportPage() {
     setImporting(true)
     setMessage('Import functionality coming soon. This feature is being rebuilt.')
     
-    // TODO: Implement actual import logic
     setTimeout(() => {
       setImporting(false)
     }, 2000)
