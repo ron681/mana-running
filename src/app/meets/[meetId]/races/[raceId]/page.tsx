@@ -1,13 +1,11 @@
 // app/meets/[meetId]/races/[raceId]/page.tsx
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
-import { cookies } from 'next/headers'
+import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { getGradeDisplay } from '@/lib/grade-utils'
 import React from 'react'
-import { DeleteConfirmationDialog } from '@/components/delete-confirmation-dialog'
-import { deleteAllRaceResults, deleteRace, deleteResult } from '@/app/actions/delete-operations'
+import { DeleteRaceActions, DeleteResultButton } from '@/components/race-delete-buttons'
 import { isAdmin } from '@/lib/auth/admin'
 
 interface RaceResult {
@@ -43,8 +41,9 @@ export default async function RaceResultsPage({
 }: {
   params: { meetId: string; raceId: string }
 }) {
-  const supabase = createServerComponentClient({ cookies })
-  const admin = await isAdmin()
+const supabase = await createClient()
+const admin = await isAdmin(supabase)
+
   // Get race details with meet info
   const { data: race, error: raceError } = await supabase
     .from('races')
@@ -166,55 +165,7 @@ const teamStandings = Object.entries(teamResults)
   .sort((a, b) => a.score - b.score);
 
   
-  function DeleteRaceActions({ raceId, meetId }: { raceId: string; meetId: string }) {
-    'use client'
-    
-    const handleDeleteResults = async () => {
-      await deleteAllRaceResults(raceId)
-      window.location.reload()
-    }
 
-    const handleDeleteRace = async () => {
-      await deleteRace(raceId, meetId)
-      window.location.href = `/meets/${meetId}`
-    }
-
-    return (
-      <div className="flex gap-2">
-        <DeleteConfirmationDialog
-          title="Delete All Results"
-          description="This will permanently delete all results from this race. This action cannot be undone."
-          onConfirm={handleDeleteResults}
-          buttonText="Delete Results"
-        />
-        <DeleteConfirmationDialog
-          title="Delete Entire Race"
-          description="This will permanently delete this race and all its results. This action cannot be undone."
-          onConfirm={handleDeleteRace}
-          buttonText="Delete Race"
-        />
-      </div>
-    )
-  }
-
-  function DeleteResultButton({ resultId, raceId }: { resultId: string; raceId: string }) {
-    'use client'
-    
-    const handleDelete = async () => {
-      await deleteResult(resultId, raceId)
-      window.location.reload()
-    }
-
-    return (
-      <DeleteConfirmationDialog
-        title="Delete Result"
-        description="This will permanently delete this athlete's result. This action cannot be undone."
-        onConfirm={handleDelete}
-        buttonText=""
-        size="icon"
-      />
-    )
-  }
   
       
   return (

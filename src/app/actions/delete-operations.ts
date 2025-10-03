@@ -2,6 +2,8 @@
 
 import { meetCRUD, raceCRUD, resultCRUD } from '@/lib/crud-operations'
 import { revalidatePath } from 'next/cache'
+import { supabase } from '@/lib/supabase'
+
 
 export async function deleteMeet(meetId: string) {
   const result = await meetCRUD.delete(meetId)
@@ -22,10 +24,6 @@ export async function deleteResult(resultId: string, raceId: string) {
 }
 
 export async function deleteAllRaceResults(raceId: string) {
-  // Get all results for this race
-  const { createClient } = await import('@/lib/supabase/server')
-  const supabase = await createClient()
-  
   const { data: results } = await supabase
     .from('results')
     .select('id')
@@ -41,10 +39,6 @@ export async function deleteAllRaceResults(raceId: string) {
 }
 
 export async function deleteAllMeetResults(meetId: string) {
-  // Get all races for this meet
-  const { createClient } = await import('@/lib/supabase/server')
-  const supabase = await createClient()
-  
   const { data: races } = await supabase
     .from('races')
     .select('id')
@@ -56,7 +50,6 @@ export async function deleteAllMeetResults(meetId: string) {
   
   const raceIds = races.map(r => r.id)
   
-  // Get all results for these races
   const { data: results } = await supabase
     .from('results')
     .select('id')

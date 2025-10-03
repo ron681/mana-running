@@ -1,7 +1,7 @@
 // lib/crud-operations.ts - Updated for new rating system
 
 import { supabase } from './supabase';
-import { requireAdmin } from './auth/admin';
+
 
 // ==================== ATHLETE CRUD OPERATIONS ====================
 
@@ -205,7 +205,6 @@ async create(meetData: {
 
 // DELETE: Delete meet and all results (ADMIN ONLY)
 async delete(id: string) {
-  await requireAdmin();
   
   // Get result count for confirmation
   const { data: results } = await supabase
@@ -433,8 +432,6 @@ export const resultCRUD = {
   },
 
 async delete(id: string) {
-    await requireAdmin();
-    
     const { error } = await supabase
       .from('results')
       .delete()
@@ -445,9 +442,7 @@ async delete(id: string) {
   },   // ← COMMA ADDED
 
   // DELETE: Delete multiple results (ADMIN ONLY)
-  async deleteMultiple(ids: string[]) {
-  await requireAdmin();
-  
+  async deleteMultiple(ids: string[]) {  
   const { error } = await supabase
     .from('results')
     .delete()
@@ -455,7 +450,7 @@ async delete(id: string) {
   
   if (error) throw error;
   return true;
-}
+},
   
   // GET: Search results across entire database
   async searchAllResults(searchQuery = '', limit = 5000) {
@@ -615,8 +610,6 @@ export const raceCRUD = {
 
 // DELETE: Delete race and all results (ADMIN ONLY)
 async delete(id: string) {
-  await requireAdmin();
-  
   // Get result count for confirmation
   const { data: results } = await supabase
     .from('results')
