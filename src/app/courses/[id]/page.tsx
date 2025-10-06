@@ -19,7 +19,6 @@ interface Meet {
   id: string
   name: string
   meet_date: string
-  gender: string
   meet_type: string
   participants_count?: number
 }
@@ -540,7 +539,6 @@ const formatTime = (centiseconds: number): string => {
                     <tr className="border-b text-left bg-gray-50">
                       <th className="py-3 px-4 font-bold text-black">Meet Name</th>
                       <th className="py-3 px-4 font-bold text-black">Date</th>
-                      <th className="py-3 px-4 font-bold text-black">Gender</th>
                       <th className="py-3 px-4 font-bold text-black">Type</th>
                       <th className="py-3 px-4 font-bold text-black">Actions</th>
                     </tr>
@@ -560,13 +558,6 @@ const formatTime = (centiseconds: number): string => {
                           {formatDate(meet.meet_date)}
                         </td>
                         <td className="py-3 px-4">
-                          <span className={`px-2 py-1 rounded text-sm font-semibold ${
-                            meet.gender === 'Boys' ? 'bg-blue-100 text-blue-800' :
-                            meet.gender === 'Girls' ? 'bg-pink-100 text-pink-800' :
-                            'bg-gray-100 text-gray-800'
-                          }`}>
-                            {meet.gender || 'N/A'}
-                          </span>
                         </td>
                         <td className="py-3 px-4 text-black">
                           {meet.meet_type || 'N/A'}
