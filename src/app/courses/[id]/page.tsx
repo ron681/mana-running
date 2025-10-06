@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { courseCRUD, meetCRUD, resultCRUD } from '@/lib/crud-operations'
+import { courseCRUD, meetCRUD } from '@/lib/crud-operations'
 import { supabase } from '@/lib/supabase'
 
 interface Course {
@@ -9,8 +9,8 @@ interface Course {
   name: string
   distance_meters: number
   distance_miles: number
-  mile_difficulty: number          // NEW: How hard vs 1-mile track
-  xc_time_rating: number          // NEW: For XC time conversion
+  mile_difficulty: number
+  xc_time_rating: number
   rating_confidence: string
   total_results_count: number
 }
@@ -22,25 +22,6 @@ interface Meet {
   gender: string
   meet_type: string
   participants_count?: number
-}
-
-interface Result {
-  id: string
-  time_seconds: number
-  place_overall: number
-  season_year: number
-  athlete: {
-    first_name: string
-    last_name: string
-    graduation_year: number
-    school: {
-      name: string
-    }
-  }
-  meet: {
-    name: string
-    meet_date: string
-  }
 }
 
 interface CourseRecord {
@@ -62,18 +43,13 @@ interface Props {
 export default function IndividualCoursePage({ params }: Props) {
   const [course, setCourse] = useState<Course | null>(null)
   const [meets, setMeets] = useState<Meet[]>([])
-  const [results, setResults] = useState<Result[]>([])
   const [boysRecords, setBoysRecords] = useState<CourseRecord[]>([])
   const [girlsRecords, setGirlsRecords] = useState<CourseRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'meets' | 'results'>('meets')
+  const [activeTab, setActiveTab] = useState<'meets'>('meets')
   const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 25
-
-  useEffect(() => {
-    loadCourseData()
-  }, [params.id])
 
   const loadCourseData = async () => {
     try {
@@ -268,6 +244,11 @@ export default function IndividualCoursePage({ params }: Props) {
     }
   }
 
+  useEffect(() => {
+    loadCourseData()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.id])
+
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60)
     const secs = seconds % 60
@@ -284,12 +265,11 @@ export default function IndividualCoursePage({ params }: Props) {
     })
   }
 
-  // Updated difficulty colors and labels for mile_difficulty (vs 1-mile track baseline)
   const getDifficultyColor = (mileDifficulty: number) => {
-    if (mileDifficulty >= 1.20) return 'bg-red-100 text-red-800'      // Very Hard (20%+ harder than track mile)
-    if (mileDifficulty >= 1.15) return 'bg-orange-100 text-orange-800' // Hard (15-20% harder)
-    if (mileDifficulty >= 1.05) return 'bg-yellow-100 text-yellow-800' // Moderate (5-15% harder)
-    return 'bg-green-100 text-green-800'                               // Fast/Easy (< 5% harder)
+    if (mileDifficulty >= 1.20) return 'bg-red-100 text-red-800'
+    if (mileDifficulty >= 1.15) return 'bg-orange-100 text-orange-800'
+    if (mileDifficulty >= 1.05) return 'bg-yellow-100 text-yellow-800'
+    return 'bg-green-100 text-green-800'
   }
 
   const getDifficultyLabel = (mileDifficulty: number) => {
@@ -299,12 +279,11 @@ export default function IndividualCoursePage({ params }: Props) {
     return 'Fast'
   }
 
-  // Pagination for current tab
-  const currentItems = activeTab === 'meets' ? meets : results
-  const totalPages = Math.ceil(currentItems.length / itemsPerPage)
+  // Pagination for meets
+  const totalPages = Math.ceil(meets.length / itemsPerPage)
   const startIndex = (currentPage - 1) * itemsPerPage
   const endIndex = startIndex + itemsPerPage
-  const paginatedItems = currentItems.slice(startIndex, endIndex)
+  const paginatedItems = meets.slice(startIndex, endIndex)
 
   if (loading) {
     return (
@@ -512,116 +491,70 @@ export default function IndividualCoursePage({ params }: Props) {
           </div>
         )}
 
-        {/* Tabs */}
+        {/* Meets Tab */}
         <div className="bg-white rounded-lg shadow mb-6">
-          <div className="border-b">
-            <nav className="flex space-x-8 px-6">
-              <button
-                onClick={() => {
-                  setActiveTab('meets')
-                  setCurrentPage(1)
-                }}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'meets'
-                    ? 'border-green-500 text-green-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                Meets on Course ({meets.length})
-              </button>
-              <button
-                onClick={() => {
-                  setActiveTab('results')
-                  setCurrentPage(1)
-                }}
-                className={`py-4 px-1 border-b-2 font-medium text-sm ${
-                  activeTab === 'results'
-                    ? 'border-green-500 text-green-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                }`}
-              >
-                All Results on Course ({results.length})
-              </button>
-            </nav>
+          <div className="border-b px-6 py-4">
+            <h2 className="text-xl font-bold text-black">Meets on Course ({meets.length})</h2>
           </div>
 
-          {/* Tab Content */}
           <div className="p-6">
-            {activeTab === 'meets' ? (
-              // Meets Tab Content
-              <div>
-                <h3 className="text-xl font-bold text-black mb-4">Meets Held on This Course</h3>
-                {meets.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="text-gray-500 mb-4">No meets found for this course.</div>
-                    <div className="text-sm text-gray-400">
-                      Meets may not have been imported yet.
-                    </div>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="min-w-full">
-                      <thead>
-                        <tr className="border-b text-left bg-gray-50">
-                          <th className="py-3 px-4 font-bold text-black">Meet Name</th>
-                          <th className="py-3 px-4 font-bold text-black">Date</th>
-                          <th className="py-3 px-4 font-bold text-black">Gender</th>
-                          <th className="py-3 px-4 font-bold text-black">Type</th>
-                          <th className="py-3 px-4 font-bold text-black">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {paginatedItems.map((meet) => (
-                          <tr key={meet.id} className="border-b hover:bg-gray-50">
-                            <td className="py-3 px-4">
-                              <a 
-                                href={`/races/${meet.id}`}
-                                className="font-bold text-green-600 hover:text-green-800 transition-colors"
-                              >
-                                {(meet as any).name || "Unknown Meet"}
-                              </a>
-                            </td>
-                            <td className="py-3 px-4 text-black">
-                              {formatDate((meet as any).meet_date || new Date())}
-                            </td>
-                            <td className="py-3 px-4">
-                              <span className={`px-2 py-1 rounded text-sm font-semibold ${
-                                (meet as any).gender === 'Boys' ? 'bg-blue-100 text-blue-800' :
-                                (meet as any).gender === 'Girls' ? 'bg-pink-100 text-pink-800' :
-                                'bg-gray-100 text-gray-800'
-                              }`}>
-                                {(meet as any).gender || 'N/A'}
-                              </span>
-                            </td>
-                            <td className="py-3 px-4 text-black">
-                              {(meet as any).meet_type || 'N/A'}
-                            </td>
-                            <td className="py-3 px-4">
-                              <a 
-                                href={`/races/${meet.id}`}
-                                className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
-                              >
-                                View Results
-                              </a>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+            {meets.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="text-gray-500 mb-4">No meets found for this course.</div>
+                <div className="text-sm text-gray-400">
+                  Meets may not have been imported yet.
+                </div>
               </div>
             ) : (
-              // Results Tab Content
-              <div>
-                <h3 className="text-xl font-bold text-black mb-4">All Results on This Course</h3>
-                <div className="text-center py-12">
-                  <div className="text-gray-500 mb-4">Results data coming soon.</div>
-                  <div className="text-sm text-gray-400">
-                    This feature will show all individual race results from every meet held on this course,
-                    with XC Time equivalents for fair performance comparison.
-                  </div>
-                </div>
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="border-b text-left bg-gray-50">
+                      <th className="py-3 px-4 font-bold text-black">Meet Name</th>
+                      <th className="py-3 px-4 font-bold text-black">Date</th>
+                      <th className="py-3 px-4 font-bold text-black">Gender</th>
+                      <th className="py-3 px-4 font-bold text-black">Type</th>
+                      <th className="py-3 px-4 font-bold text-black">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paginatedItems.map((meet) => (
+                      <tr key={meet.id} className="border-b hover:bg-gray-50">
+                        <td className="py-3 px-4">
+                          <a 
+                            href={`/races/${meet.id}`}
+                            className="font-bold text-green-600 hover:text-green-800 transition-colors"
+                          >
+                            {meet.name || "Unknown Meet"}
+                          </a>
+                        </td>
+                        <td className="py-3 px-4 text-black">
+                          {formatDate(meet.meet_date)}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-1 rounded text-sm font-semibold ${
+                            meet.gender === 'Boys' ? 'bg-blue-100 text-blue-800' :
+                            meet.gender === 'Girls' ? 'bg-pink-100 text-pink-800' :
+                            'bg-gray-100 text-gray-800'
+                          }`}>
+                            {meet.gender || 'N/A'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-black">
+                          {meet.meet_type || 'N/A'}
+                        </td>
+                        <td className="py-3 px-4">
+                          <a 
+                            href={`/races/${meet.id}`}
+                            className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+                          >
+                            View Results
+                          </a>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
 
@@ -629,7 +562,7 @@ export default function IndividualCoursePage({ params }: Props) {
             {totalPages > 1 && (
               <div className="flex items-center justify-between mt-6 pt-4 border-t">
                 <div className="text-sm text-gray-600">
-                  Showing {startIndex + 1}-{Math.min(endIndex, currentItems.length)} of {currentItems.length} {activeTab}
+                  Showing {startIndex + 1}-{Math.min(endIndex, meets.length)} of {meets.length} meets
                 </div>
                 <div className="flex space-x-2">
                   <button
