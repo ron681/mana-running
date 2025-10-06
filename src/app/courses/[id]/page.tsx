@@ -340,9 +340,9 @@ const loadTopTeamPerformances = async (courseId: string) => {
     
     const boysTeamMap = new Map<string, typeof processedResults>()
     
-    // Group by meet + school
+    // Group by RACE + school (not meet + school)
     for (const result of boysResults) {
-      const key = `${result.race.meet.id}_${result.athlete.school.id}`
+      const key = `${result.race.id}_${result.athlete.school.id}`
       if (!boysTeamMap.has(key)) {
         boysTeamMap.set(key, [])
       }
@@ -388,9 +388,9 @@ const loadTopTeamPerformances = async (courseId: string) => {
     
     const girlsTeamMap = new Map<string, typeof processedResults>()
     
-    // Group by meet + school
+    // Group by RACE + school (not meet + school)
     for (const result of girlsResults) {
-      const key = `${result.race.meet.id}_${result.athlete.school.id}`
+      const key = `${result.race.id}_${result.athlete.school.id}`
       if (!girlsTeamMap.has(key)) {
         girlsTeamMap.set(key, [])
       }
