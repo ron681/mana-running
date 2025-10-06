@@ -84,174 +84,184 @@ const [currentPage, setCurrentPage] = useState(1)
   }
 
   const loadCourseRecords = async (courseId: string) => {
-    try {
-      // Fetch all results for races on this course
-      const { data: raceResults, error } = await supabase
-        .from('results')
-        .select(`
+  try {
+    // Fetch ALL results for races on this course (no limit on ordering)
+    const { data: raceResults, error } = await supabase
+      .from('results')
+      .select(`
+        id,
+        time_seconds,
+        race:races!inner(
           id,
-          time_seconds,
-          race:races!inner(
+          gender,
+          course_id,
+          meet:meets!inner(
             id,
-            gender,
-            course_id,
-            meet:meets!inner(
-              id,
-              meet_date
-            )
-          ),
-          athlete:athletes!inner(
-            id,
-            first_name,
-            last_name,
-            graduation_year,
-            gender,
-            school:schools!inner(
-              id,
-              name
-            )
+            meet_date
           )
-        `)
-        .eq('race.course_id', courseId)
-        .order('time_seconds')
+        ),
+        athlete:athletes!inner(
+          id,
+          first_name,
+          last_name,
+          graduation_year,
+          gender,
+          school:schools!inner(
+            id,
+            name
+          )
+        )
+      `)
+      .eq('race.course_id', courseId)
 
-      if (error) throw error
+    if (error) throw error
 
-      // Process results with proper type handling
-      const processedResults = raceResults?.map(r => ({
-        ...r,
-        race: Array.isArray(r.race) ? r.race[0] : r.race,
-        athlete: Array.isArray(r.athlete) ? r.athlete[0] : r.athlete
-      })).map(r => ({
-        ...r,
-        race: {
-          ...r.race,
-          meet: Array.isArray(r.race.meet) ? r.race.meet[0] : r.race.meet
-        },
-        athlete: {
-          ...r.athlete,
-          school: Array.isArray(r.athlete.school) ? r.athlete.school[0] : r.athlete.school
-        }
-      })) || []
+    // Process results with proper type handling
+    const processedResults = raceResults?.map(r => ({
+      ...r,
+      race: Array.isArray(r.race) ? r.race[0] : r.race,
+      athlete: Array.isArray(r.athlete) ? r.athlete[0] : r.athlete
+    })).map(r => ({
+      ...r,
+      race: {
+        ...r.race,
+        meet: Array.isArray(r.race.meet) ? r.race.meet[0] : r.race.meet
+      },
+      athlete: {
+        ...r.athlete,
+        school: Array.isArray(r.athlete.school) ? r.athlete.school[0] : r.athlete.school
+      }
+    })) || []
 
-      // Process records for boys
-      const boysResults = processedResults.filter(r => 
-        r.race?.gender === 'Boys' || r.athlete?.gender === 'M'
+    // Process records for boys
+    const boysResults = processedResults.filter(r => 
+      r.race?.gender === 'Boys' || r.athlete?.gender === 'M'
+    )
+    
+    const boysRecordsMap = new Map<string, CourseRecord>()
+    
+    // Overall boys record (fastest time)
+    if (boysResults.length > 0) {
+      const fastest = boysResults.reduce((prev, curr) => 
+        curr.time_seconds < prev.time_seconds ? curr : prev
       )
-      
-      const boysRecordsMap = new Map<string, CourseRecord>()
-      
-      // Overall boys record
-      if (boysResults.length > 0) {
-        const fastest = boysResults[0]
-        boysRecordsMap.set('Overall', {
-          athlete_id: fastest.athlete.id,
-          athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
-          school_id: fastest.athlete.school.id,
-          school_name: fastest.athlete.school.name,
-          time_seconds: fastest.time_seconds,
-          race_date: fastest.race.meet.meet_date,
-          grade: 'Overall'
-        })
-      }
-// Boys records by grade (9-12)
-for (const result of boysResults) {
-  const raceDate = new Date(result.race.meet.meet_date)
-  const raceYear = raceDate.getFullYear()
-  const raceMonth = raceDate.getMonth()
-  
-  // Athletic year is 7/1 to 6/30 (month 6 = July, month 5 = June)
-  // July-Dec uses next year, Jan-June uses current year
-  const schoolYearEnding = raceMonth >= 6 ? raceYear + 1 : raceYear
-  const grade = 12 - (result.athlete.graduation_year - schoolYearEnding)
-
-        if (grade >= 9 && grade <= 12) {
-          const key = `grade${grade}`
-          if (!boysRecordsMap.has(key)) {
-            boysRecordsMap.set(key, {
-              athlete_id: result.athlete.id,
-              athlete_name: `${result.athlete.first_name} ${result.athlete.last_name}`,
-              school_id: result.athlete.school.id,
-              school_name: result.athlete.school.name,
-              time_seconds: result.time_seconds,
-              race_date: result.race.meet.meet_date,
-              grade: grade
-            })
-          }
-        }
-      }
-
-      // Process records for girls
-      const girlsResults = processedResults.filter(r => 
-        r.race?.gender === 'Girls' || r.athlete?.gender === 'F'
-      )
-      
-      const girlsRecordsMap = new Map<string, CourseRecord>()
-      
-      // Overall girls record
-      if (girlsResults.length > 0) {
-        const fastest = girlsResults[0]
-        girlsRecordsMap.set('Overall', {
-          athlete_id: fastest.athlete.id,
-          athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
-          school_id: fastest.athlete.school.id,
-          school_name: fastest.athlete.school.name,
-          time_seconds: fastest.time_seconds,
-          race_date: fastest.race.meet.meet_date,
-          grade: 'Overall'
-        })
-      }
-
-// Girls records by grade (9-12)
-for (const result of girlsResults) {
-  const raceDate = new Date(result.race.meet.meet_date)
-  const raceYear = raceDate.getFullYear()
-  const raceMonth = raceDate.getMonth()
-  
-  // Athletic year is 7/1 to 6/30 (month 6 = July, month 5 = June)
-  // July-Dec uses next year, Jan-June uses current year
-  const schoolYearEnding = raceMonth >= 6 ? raceYear + 1 : raceYear
-  const grade = 12 - (result.athlete.graduation_year - schoolYearEnding)
-          
-        if (grade >= 9 && grade <= 12) {
-          const key = `grade${grade}`
-          if (!girlsRecordsMap.has(key)) {
-            girlsRecordsMap.set(key, {
-              athlete_id: result.athlete.id,
-              athlete_name: `${result.athlete.first_name} ${result.athlete.last_name}`,
-              school_id: result.athlete.school.id,
-              school_name: result.athlete.school.name,
-              time_seconds: result.time_seconds,
-              race_date: result.race.meet.meet_date,
-              grade: grade
-            })
-          }
-        }
-      }
-
-      // Convert to arrays in proper order (Overall, then 9-12)
-      const orderedBoysRecords: CourseRecord[] = []
-      const orderedGirlsRecords: CourseRecord[] = []
-
-      if (boysRecordsMap.has('Overall')) orderedBoysRecords.push(boysRecordsMap.get('Overall')!)
-      for (let grade = 9; grade <= 12; grade++) {
-        const key = `grade${grade}`
-        if (boysRecordsMap.has(key)) orderedBoysRecords.push(boysRecordsMap.get(key)!)
-      }
-
-      if (girlsRecordsMap.has('Overall')) orderedGirlsRecords.push(girlsRecordsMap.get('Overall')!)
-      for (let grade = 9; grade <= 12; grade++) {
-        const key = `grade${grade}`
-        if (girlsRecordsMap.has(key)) orderedGirlsRecords.push(girlsRecordsMap.get(key)!)
-      }
-
-      setBoysRecords(orderedBoysRecords)
-      setGirlsRecords(orderedGirlsRecords)
-
-    } catch (err) {
-      console.error('Error loading course records:', err)
+      boysRecordsMap.set('Overall', {
+        athlete_id: fastest.athlete.id,
+        athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
+        school_id: fastest.athlete.school.id,
+        school_name: fastest.athlete.school.name,
+        time_seconds: fastest.time_seconds,
+        race_date: fastest.race.meet.meet_date,
+        grade: 'Overall'
+      })
     }
+
+    // Boys records by grade (9-12) - find fastest for EACH grade
+    for (let targetGrade = 9; targetGrade <= 12; targetGrade++) {
+      const gradeResults = boysResults.filter(result => {
+        const raceDate = new Date(result.race.meet.meet_date)
+        const raceYear = raceDate.getFullYear()
+        const raceMonth = raceDate.getMonth()
+        
+        // Athletic year is 7/1 to 6/30 (month 6 = July, month 5 = June)
+        const schoolYearEnding = raceMonth >= 6 ? raceYear + 1 : raceYear
+        const grade = 12 - (result.athlete.graduation_year - schoolYearEnding)
+        
+        return grade === targetGrade
+      })
+
+      if (gradeResults.length > 0) {
+        const fastest = gradeResults.reduce((prev, curr) => 
+          curr.time_seconds < prev.time_seconds ? curr : prev
+        )
+        boysRecordsMap.set(`grade${targetGrade}`, {
+          athlete_id: fastest.athlete.id,
+          athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
+          school_id: fastest.athlete.school.id,
+          school_name: fastest.athlete.school.name,
+          time_seconds: fastest.time_seconds,
+          race_date: fastest.race.meet.meet_date,
+          grade: targetGrade
+        })
+      }
+    }
+
+    // Process records for girls
+    const girlsResults = processedResults.filter(r => 
+      r.race?.gender === 'Girls' || r.athlete?.gender === 'F'
+    )
+    
+    const girlsRecordsMap = new Map<string, CourseRecord>()
+    
+    // Overall girls record (fastest time)
+    if (girlsResults.length > 0) {
+      const fastest = girlsResults.reduce((prev, curr) => 
+        curr.time_seconds < prev.time_seconds ? curr : prev
+      )
+      girlsRecordsMap.set('Overall', {
+        athlete_id: fastest.athlete.id,
+        athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
+        school_id: fastest.athlete.school.id,
+        school_name: fastest.athlete.school.name,
+        time_seconds: fastest.time_seconds,
+        race_date: fastest.race.meet.meet_date,
+        grade: 'Overall'
+      })
+    }
+
+    // Girls records by grade (9-12) - find fastest for EACH grade
+    for (let targetGrade = 9; targetGrade <= 12; targetGrade++) {
+      const gradeResults = girlsResults.filter(result => {
+        const raceDate = new Date(result.race.meet.meet_date)
+        const raceYear = raceDate.getFullYear()
+        const raceMonth = raceDate.getMonth()
+        
+        // Athletic year is 7/1 to 6/30 (month 6 = July, month 5 = June)
+        const schoolYearEnding = raceMonth >= 6 ? raceYear + 1 : raceYear
+        const grade = 12 - (result.athlete.graduation_year - schoolYearEnding)
+        
+        return grade === targetGrade
+      })
+
+      if (gradeResults.length > 0) {
+        const fastest = gradeResults.reduce((prev, curr) => 
+          curr.time_seconds < prev.time_seconds ? curr : prev
+        )
+        girlsRecordsMap.set(`grade${targetGrade}`, {
+          athlete_id: fastest.athlete.id,
+          athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
+          school_id: fastest.athlete.school.id,
+          school_name: fastest.athlete.school.name,
+          time_seconds: fastest.time_seconds,
+          race_date: fastest.race.meet.meet_date,
+          grade: targetGrade
+        })
+      }
+    }
+
+    // Convert to arrays in proper order (Overall, then 9-12)
+    const orderedBoysRecords: CourseRecord[] = []
+    const orderedGirlsRecords: CourseRecord[] = []
+
+    if (boysRecordsMap.has('Overall')) orderedBoysRecords.push(boysRecordsMap.get('Overall')!)
+    for (let grade = 9; grade <= 12; grade++) {
+      const key = `grade${grade}`
+      if (boysRecordsMap.has(key)) orderedBoysRecords.push(boysRecordsMap.get(key)!)
+    }
+
+    if (girlsRecordsMap.has('Overall')) orderedGirlsRecords.push(girlsRecordsMap.get('Overall')!)
+    for (let grade = 9; grade <= 12; grade++) {
+      const key = `grade${grade}`
+      if (girlsRecordsMap.has(key)) orderedGirlsRecords.push(girlsRecordsMap.get(key)!)
+    }
+
+    setBoysRecords(orderedBoysRecords)
+    setGirlsRecords(orderedGirlsRecords)
+
+  } catch (err) {
+    console.error('Error loading course records:', err)
   }
+}
 
   useEffect(() => {
     loadCourseData()
