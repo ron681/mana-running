@@ -33,6 +33,21 @@ interface CourseRecord {
   grade: number | 'Overall'
 }
 
+interface TeamPerformance {
+  school_id: string
+  school_name: string
+  meet_id: string
+  meet_name: string
+  meet_date: string
+  total_time: number
+  runner_count: number
+  top_five: Array<{
+    athlete_id: string
+    athlete_name: string
+    time_seconds: number
+  }>
+}
+
 interface Props {
   params: {
     id: string
@@ -44,6 +59,8 @@ export default function IndividualCoursePage({ params }: Props) {
   const [meets, setMeets] = useState<Meet[]>([])
  const [boysRecords, setBoysRecords] = useState<CourseRecord[]>([])
 const [girlsRecords, setGirlsRecords] = useState<CourseRecord[]>([])
+const [boysTeams, setBoysTeams] = useState<TeamPerformance[]>([])
+const [girlsTeams, setGirlsTeams] = useState<TeamPerformance[]>([])
 const [loading, setLoading] = useState(true)
 const [error, setError] = useState<string | null>(null)
 const [currentPage, setCurrentPage] = useState(1)
@@ -74,6 +91,9 @@ const [currentPage, setCurrentPage] = useState(1)
 
       // Load course records
       await loadCourseRecords(params.id)
+
+      // Load top team performances
+await loadTopTeamPerformances(params.id)
 
     } catch (err) {
       console.error('Error loading course data:', err)
@@ -260,6 +280,157 @@ const [currentPage, setCurrentPage] = useState(1)
 
   } catch (err) {
     console.error('Error loading course records:', err)
+  }
+}
+
+const loadTopTeamPerformances = async (courseId: string) => {
+  try {
+    // Fetch ALL results for races on this course
+    const { data: raceResults, error } = await supabase
+      .from('results')
+      .select(`
+        id,
+        time_seconds,
+        race:races!inner(
+          id,
+          gender,
+          course_id,
+          meet:meets!inner(
+            id,
+            name,
+            meet_date
+          )
+        ),
+        athlete:athletes!inner(
+          id,
+          first_name,
+          last_name,
+          graduation_year,
+          school:schools!inner(
+            id,
+            name
+          )
+        )
+      `)
+      .eq('race.course_id', courseId)
+
+    if (error) throw error
+
+    // Process results with proper type handling
+    const processedResults = raceResults?.map(r => ({
+      ...r,
+      race: Array.isArray(r.race) ? r.race[0] : r.race,
+      athlete: Array.isArray(r.athlete) ? r.athlete[0] : r.athlete
+    })).map(r => ({
+      ...r,
+      race: {
+        ...r.race,
+        meet: Array.isArray(r.race.meet) ? r.race.meet[0] : r.race.meet
+      },
+      athlete: {
+        ...r.athlete,
+        school: Array.isArray(r.athlete.school) ? r.athlete.school[0] : r.athlete.school
+      }
+    })) || []
+
+    // Process boys teams
+    const boysResults = processedResults.filter(r => 
+      r.race?.gender === 'Boys' || r.athlete?.gender === 'M'
+    )
+    
+    const boysTeamMap = new Map<string, typeof processedResults>()
+    
+    // Group by meet + school
+    for (const result of boysResults) {
+      const key = `${result.race.meet.id}_${result.athlete.school.id}`
+      if (!boysTeamMap.has(key)) {
+        boysTeamMap.set(key, [])
+      }
+      boysTeamMap.get(key)!.push(result)
+    }
+
+    // Calculate team scores
+    const boysTeamPerformances: TeamPerformance[] = []
+    
+    for (const [key, teamResults] of boysTeamMap.entries()) {
+      // Need at least 5 runners
+      if (teamResults.length >= 5) {
+        // Sort by time and take top 5
+        const sorted = teamResults.sort((a, b) => a.time_seconds - b.time_seconds)
+        const topFive = sorted.slice(0, 5)
+        const totalTime = topFive.reduce((sum, r) => sum + r.time_seconds, 0)
+        
+        boysTeamPerformances.push({
+          school_id: topFive[0].athlete.school.id,
+          school_name: topFive[0].athlete.school.name,
+          meet_id: topFive[0].race.meet.id,
+          meet_name: topFive[0].race.meet.name,
+          meet_date: topFive[0].race.meet.meet_date,
+          total_time: totalTime,
+          runner_count: teamResults.length,
+          top_five: topFive.map(r => ({
+            athlete_id: r.athlete.id,
+            athlete_name: `${r.athlete.first_name} ${r.athlete.last_name}`,
+            time_seconds: r.time_seconds
+          }))
+        })
+      }
+    }
+
+    // Sort and take top 5 performances
+    boysTeamPerformances.sort((a, b) => a.total_time - b.total_time)
+    setBoysTeams(boysTeamPerformances.slice(0, 5))
+
+    // Process girls teams
+    const girlsResults = processedResults.filter(r => 
+      r.race?.gender === 'Girls' || r.athlete?.gender === 'F'
+    )
+    
+    const girlsTeamMap = new Map<string, typeof processedResults>()
+    
+    // Group by meet + school
+    for (const result of girlsResults) {
+      const key = `${result.race.meet.id}_${result.athlete.school.id}`
+      if (!girlsTeamMap.has(key)) {
+        girlsTeamMap.set(key, [])
+      }
+      girlsTeamMap.get(key)!.push(result)
+    }
+
+    // Calculate team scores
+    const girlsTeamPerformances: TeamPerformance[] = []
+    
+    for (const [key, teamResults] of girlsTeamMap.entries()) {
+      // Need at least 5 runners
+      if (teamResults.length >= 5) {
+        // Sort by time and take top 5
+        const sorted = teamResults.sort((a, b) => a.time_seconds - b.time_seconds)
+        const topFive = sorted.slice(0, 5)
+        const totalTime = topFive.reduce((sum, r) => sum + r.time_seconds, 0)
+        
+        girlsTeamPerformances.push({
+          school_id: topFive[0].athlete.school.id,
+          school_name: topFive[0].athlete.school.name,
+          meet_id: topFive[0].race.meet.id,
+          meet_name: topFive[0].race.meet.name,
+          meet_date: topFive[0].race.meet.meet_date,
+          total_time: totalTime,
+          runner_count: teamResults.length,
+          top_five: topFive.map(r => ({
+            athlete_id: r.athlete.id,
+            athlete_name: `${r.athlete.first_name} ${r.athlete.last_name}`,
+            time_seconds: r.time_seconds
+          }))
+        })
+      }
+    }
+
+    // Sort and take top 5 performances
+    girlsTeamPerformances.sort((a, b) => a.total_time - b.total_time)
+    setGirlsTeams(girlsTeamPerformances.slice(0, 5))
+
+  } catch (err) {
+    console.error('Error loading team performances:', err)
   }
 }
 
@@ -527,6 +698,128 @@ const formatTime = (centiseconds: number): string => {
             </div>
           </div>
         )}
+
+{/* Top 5 Team Performances */}
+{(boysTeams.length > 0 || girlsTeams.length > 0) && (
+  <div className="bg-white rounded-lg shadow mb-6 p-6">
+    <h2 className="text-2xl font-bold text-black mb-4">Top 5 Team Performances</h2>
+    
+    {/* Disclaimer */}
+    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6">
+      <div className="flex items-start space-x-2">
+        <svg className="h-5 w-5 text-yellow-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+        </svg>
+        <p className="text-sm text-yellow-800">
+          <strong>Note:</strong> Team times are the sum of the top 5 runners from a school at a single meet on this course.
+        </p>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      {/* Boys Teams */}
+      <div>
+        <h3 className="text-xl font-bold text-blue-600 mb-4">Boys</h3>
+        {boysTeams.length === 0 ? (
+          <div className="text-gray-500 text-sm">No complete team performances (5+ runners) found</div>
+        ) : (
+          <div className="space-y-4">
+            {boysTeams.map((team, index) => (
+              <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="font-bold text-lg text-gray-900">#{index + 1}</div>
+                    <a 
+                      href={`/schools/${team.school_id}`}
+                      className="text-green-600 hover:text-green-800 font-semibold"
+                    >
+                      {team.school_name}
+                    </a>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-xl text-black">
+                      {formatTime(team.total_time)}
+                    </div>
+                    <div className="text-xs text-gray-500">Total Time</div>
+                  </div>
+                </div>
+                <div className="text-xs text-gray-600 mb-2">
+                  {team.meet_name} • {formatDate(team.meet_date)}
+                </div>
+                <div className="text-xs space-y-1 mt-2 pt-2 border-t">
+                  {team.top_five.map((runner, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <a 
+                        href={`/athletes/${runner.athlete_id}`}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        {idx + 1}. {runner.athlete_name}
+                      </a>
+                      <span className="text-gray-700 font-mono">
+                        {formatTime(runner.time_seconds)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Girls Teams */}
+      <div>
+        <h3 className="text-xl font-bold text-pink-600 mb-4">Girls</h3>
+        {girlsTeams.length === 0 ? (
+          <div className="text-gray-500 text-sm">No complete team performances (5+ runners) found</div>
+        ) : (
+          <div className="space-y-4">
+            {girlsTeams.map((team, index) => (
+              <div key={index} className="border rounded-lg p-4 bg-gray-50">
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <div className="font-bold text-lg text-gray-900">#{index + 1}</div>
+                    <a 
+                      href={`/schools/${team.school_id}`}
+                      className="text-green-600 hover:text-green-800 font-semibold"
+                    >
+                      {team.school_name}
+                    </a>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-bold text-xl text-black">
+                      {formatTime(team.total_time)}
+                    </div>
+                    <div className="text-xs text-gray-500">Total Time</div>
+                  </div>
+                </div>
+                <div className="text-xs text-gray-600 mb-2">
+                  {team.meet_name} • {formatDate(team.meet_date)}
+                </div>
+                <div className="text-xs space-y-1 mt-2 pt-2 border-t">
+                  {team.top_five.map((runner, idx) => (
+                    <div key={idx} className="flex justify-between">
+                      <a 
+                        href={`/athletes/${runner.athlete_id}`}
+                        className="text-blue-600 hover:text-blue-800"
+                      >
+                        {idx + 1}. {runner.athlete_name}
+                      </a>
+                      <span className="text-gray-700 font-mono">
+                        {formatTime(runner.time_seconds)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
 
         {/* Meets Tab */}
         <div className="bg-white rounded-lg shadow mb-6">
