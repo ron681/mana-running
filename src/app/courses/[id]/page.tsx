@@ -849,14 +849,16 @@ const formatTime = (centiseconds: number): string => {
                   <tbody>
                     {paginatedItems.map((meet) => (
                       <tr key={meet.id} className="border-b hover:bg-gray-50">
-                        <td className="py-3 px-4">
-                          <a 
-                            href={`/races/${meet.id}`}
-                            className="font-bold text-green-600 hover:text-green-800 transition-colors"
-                          >
-                            {meet.name || "Unknown Meet"}
-                          </a>
-                        </td>
+
+<td className="py-3 px-4">
+  <a 
+    href={`/meets/${meet.id}`}  // CHANGED from /races/ to /meets/
+    className="font-bold text-green-600 hover:text-green-800 transition-colors"
+  >
+    {meet.name || "Unknown Meet"}
+  </a>
+</td>
+
                         <td className="py-3 px-4 text-black">
                           {formatDate(meet.meet_date)}
                         </td>
@@ -865,14 +867,14 @@ const formatTime = (centiseconds: number): string => {
                         <td className="py-3 px-4 text-black">
                           {meet.meet_type || 'N/A'}
                         </td>
-                        <td className="py-3 px-4">
-                          <a 
-                            href={`/races/${meet.id}`}
-                            className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
-                          >
-                            View Results
-                          </a>
-                        </td>
+<td className="py-3 px-4">
+  <a 
+    href={`/meets/${meet.id}`}  // CHANGED from /races/ to /meets/
+    className="bg-green-600 text-white px-3 py-1 rounded text-sm hover:bg-green-700 transition-colors"
+  >
+    View Results
+  </a>
+</td>
                       </tr>
                     ))}
                   </tbody>
