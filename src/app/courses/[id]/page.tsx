@@ -259,15 +259,15 @@ for (const result of girlsResults) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
 
-const formatTime = (seconds: number): string => {
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  const decimal = Math.floor((seconds % 1) * 100)
+const formatTime = (centiseconds: number): string => {
+  const totalSeconds = centiseconds / 100
+  const mins = Math.floor(totalSeconds / 60)
+  const secs = totalSeconds % 60
   
-  if (decimal > 0) {
-    return `${mins}:${secs.toString().padStart(2, '0')}.${decimal.toString().padStart(2, '0')}`
-  }
-  return `${mins}:${secs.toString().padStart(2, '0')}`
+  // Format seconds with 2 decimal places, pad to 5 chars (00.00)
+  const secsStr = secs.toFixed(2).padStart(5, '0')
+  
+  return `${mins}:${secsStr}`
 }
 
   const formatDate = (dateString: string) => {
