@@ -43,12 +43,11 @@ interface Props {
 export default function IndividualCoursePage({ params }: Props) {
   const [course, setCourse] = useState<Course | null>(null)
   const [meets, setMeets] = useState<Meet[]>([])
-  const [boysRecords, setBoysRecords] = useState<CourseRecord[]>([])
-  const [girlsRecords, setGirlsRecords] = useState<CourseRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'meets'>('meets')
-  const [currentPage, setCurrentPage] = useState(1)
+ const [boysRecords, setBoysRecords] = useState<CourseRecord[]>([])
+const [girlsRecords, setGirlsRecords] = useState<CourseRecord[]>([])
+const [loading, setLoading] = useState(true)
+const [error, setError] = useState<string | null>(null)
+const [currentPage, setCurrentPage] = useState(1)
   const itemsPerPage = 25
 
   const loadCourseData = async () => {
@@ -156,12 +155,17 @@ export default function IndividualCoursePage({ params }: Props) {
           grade: 'Overall'
         })
       }
+// Boys records by grade (9-12)
+for (const result of boysResults) {
+  const raceDate = new Date(result.race.meet.meet_date)
+  const raceYear = raceDate.getFullYear()
+  const raceMonth = raceDate.getMonth()
+  
+  // Athletic year is 7/1 to 6/30 (month 6 = July, month 5 = June)
+  // July-Dec uses next year, Jan-June uses current year
+  const schoolYearEnding = raceMonth >= 6 ? raceYear + 1 : raceYear
+  const grade = 12 - (result.athlete.graduation_year - schoolYearEnding)
 
-      // Boys records by grade (9-12)
-      for (const result of boysResults) {
-        const raceYear = new Date(result.race.meet.meet_date).getFullYear()
-        const grade = 12 - (result.athlete.graduation_year - raceYear)
-        
         if (grade >= 9 && grade <= 12) {
           const key = `grade${grade}`
           if (!boysRecordsMap.has(key)) {
@@ -199,11 +203,17 @@ export default function IndividualCoursePage({ params }: Props) {
         })
       }
 
-      // Girls records by grade (9-12)
-      for (const result of girlsResults) {
-        const raceYear = new Date(result.race.meet.meet_date).getFullYear()
-        const grade = 12 - (result.athlete.graduation_year - raceYear)
-        
+// Girls records by grade (9-12)
+for (const result of girlsResults) {
+  const raceDate = new Date(result.race.meet.meet_date)
+  const raceYear = raceDate.getFullYear()
+  const raceMonth = raceDate.getMonth()
+  
+  // Athletic year is 7/1 to 6/30 (month 6 = July, month 5 = June)
+  // July-Dec uses next year, Jan-June uses current year
+  const schoolYearEnding = raceMonth >= 6 ? raceYear + 1 : raceYear
+  const grade = 12 - (result.athlete.graduation_year - schoolYearEnding)
+          
         if (grade >= 9 && grade <= 12) {
           const key = `grade${grade}`
           if (!girlsRecordsMap.has(key)) {
