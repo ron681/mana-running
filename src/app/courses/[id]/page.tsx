@@ -259,11 +259,16 @@ for (const result of girlsResults) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  const decimal = Math.floor((seconds % 1) * 100)
+  
+  if (decimal > 0) {
+    return `${mins}:${secs.toString().padStart(2, '0')}.${decimal.toString().padStart(2, '0')}`
   }
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
@@ -419,13 +424,26 @@ for (const result of girlsResults) {
           </div>
         </div>
 
-        {/* Course Records Section */}
-        {(boysRecords.length > 0 || girlsRecords.length > 0) && (
-          <div className="bg-white rounded-lg shadow mb-6 p-6">
-            <h2 className="text-2xl font-bold text-black mb-6">Course Records</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Boys Records */}
-              <div>
+{/* Course Records Section */}
+{(boysRecords.length > 0 || girlsRecords.length > 0) && (
+  <div className="bg-white rounded-lg shadow mb-6 p-6">
+    <h2 className="text-2xl font-bold text-black mb-4">Course Records</h2>
+    
+    {/* Disclaimer */}
+    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-6">
+      <div className="flex items-start space-x-2">
+        <svg className="h-5 w-5 text-yellow-600 mt-0.5" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+        </svg>
+        <p className="text-sm text-yellow-800">
+          <strong>Note:</strong> These are the fastest times currently in our database, not official course records. Not all historical races have been imported yet.
+        </p>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      {/* Boys Records */}
+      <div>
                 <h3 className="text-xl font-bold text-blue-600 mb-4">Boys</h3>
                 <div className="space-y-3">
                   {boysRecords.map((record, index) => (
