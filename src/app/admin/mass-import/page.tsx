@@ -6,8 +6,20 @@ import { importMassResults } from '@/lib/mass-results-import'
 export default function MassImportPage() {
   const [file, setFile] = useState<File | null>(null)
   const [importing, setImporting] = useState(false)
-  const [result, setResult] = useState<any>(null)
-
+  const [result, setResult] = useState<{
+  success: boolean;
+  message: string;
+  stats?: {
+    totalRows: number;
+    resultsCreated: number;
+    coursesCreated: number;
+    schoolsCreated: number;
+    athletesCreated: number;
+    meetsCreated: number;
+    racesCreated: number;
+    errors: string[];
+  };
+} | null>(null);
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       setFile(e.target.files[0])

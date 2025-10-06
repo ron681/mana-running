@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { courseCRUD, meetCRUD, resultCRUD } from '@/lib/crud-operations'
+import { supabase } from '@/lib/supabase'
 
 interface Course {
   id: string
@@ -42,6 +43,16 @@ interface Result {
   }
 }
 
+interface CourseRecord {
+  athlete_id: string
+  athlete_name: string
+  school_id: string
+  school_name: string
+  time_seconds: number
+  race_date: string
+  grade: number | 'Overall'
+}
+
 interface Props {
   params: {
     id: string
@@ -52,6 +63,8 @@ export default function IndividualCoursePage({ params }: Props) {
   const [course, setCourse] = useState<Course | null>(null)
   const [meets, setMeets] = useState<Meet[]>([])
   const [results, setResults] = useState<Result[]>([])
+  const [boysRecords, setBoysRecords] = useState<CourseRecord[]>([])
+  const [girlsRecords, setGirlsRecords] = useState<CourseRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'meets' | 'results'>('meets')
@@ -85,15 +98,173 @@ export default function IndividualCoursePage({ params }: Props) {
       
       setMeets(courseMeets)
 
-      // Load results - this would need a custom query in real implementation
-      // For now, we'll show placeholder since we don't have a direct course->results query
-      setResults([])
+      // Load course records
+      await loadCourseRecords(params.id)
 
     } catch (err) {
       console.error('Error loading course data:', err)
       setError('Failed to load course data')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadCourseRecords = async (courseId: string) => {
+    try {
+      // Fetch all results for races on this course
+      const { data: raceResults, error } = await supabase
+        .from('results')
+        .select(`
+          id,
+          time_seconds,
+          race:races!inner(
+            id,
+            gender,
+            course_id,
+            meet:meets!inner(
+              id,
+              meet_date
+            )
+          ),
+          athlete:athletes!inner(
+            id,
+            first_name,
+            last_name,
+            graduation_year,
+            gender,
+            school:schools!inner(
+              id,
+              name
+            )
+          )
+        `)
+        .eq('race.course_id', courseId)
+        .order('time_seconds')
+
+      if (error) throw error
+
+      // Process results with proper type handling
+      const processedResults = raceResults?.map(r => ({
+        ...r,
+        race: Array.isArray(r.race) ? r.race[0] : r.race,
+        athlete: Array.isArray(r.athlete) ? r.athlete[0] : r.athlete
+      })).map(r => ({
+        ...r,
+        race: {
+          ...r.race,
+          meet: Array.isArray(r.race.meet) ? r.race.meet[0] : r.race.meet
+        },
+        athlete: {
+          ...r.athlete,
+          school: Array.isArray(r.athlete.school) ? r.athlete.school[0] : r.athlete.school
+        }
+      })) || []
+
+      // Process records for boys
+      const boysResults = processedResults.filter(r => 
+        r.race?.gender === 'Boys' || r.athlete?.gender === 'M'
+      )
+      
+      const boysRecordsMap = new Map<string, CourseRecord>()
+      
+      // Overall boys record
+      if (boysResults.length > 0) {
+        const fastest = boysResults[0]
+        boysRecordsMap.set('Overall', {
+          athlete_id: fastest.athlete.id,
+          athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
+          school_id: fastest.athlete.school.id,
+          school_name: fastest.athlete.school.name,
+          time_seconds: fastest.time_seconds,
+          race_date: fastest.race.meet.meet_date,
+          grade: 'Overall'
+        })
+      }
+
+      // Boys records by grade (9-12)
+      for (const result of boysResults) {
+        const raceYear = new Date(result.race.meet.meet_date).getFullYear()
+        const grade = 12 - (result.athlete.graduation_year - raceYear)
+        
+        if (grade >= 9 && grade <= 12) {
+          const key = `grade${grade}`
+          if (!boysRecordsMap.has(key)) {
+            boysRecordsMap.set(key, {
+              athlete_id: result.athlete.id,
+              athlete_name: `${result.athlete.first_name} ${result.athlete.last_name}`,
+              school_id: result.athlete.school.id,
+              school_name: result.athlete.school.name,
+              time_seconds: result.time_seconds,
+              race_date: result.race.meet.meet_date,
+              grade: grade
+            })
+          }
+        }
+      }
+
+      // Process records for girls
+      const girlsResults = processedResults.filter(r => 
+        r.race?.gender === 'Girls' || r.athlete?.gender === 'F'
+      )
+      
+      const girlsRecordsMap = new Map<string, CourseRecord>()
+      
+      // Overall girls record
+      if (girlsResults.length > 0) {
+        const fastest = girlsResults[0]
+        girlsRecordsMap.set('Overall', {
+          athlete_id: fastest.athlete.id,
+          athlete_name: `${fastest.athlete.first_name} ${fastest.athlete.last_name}`,
+          school_id: fastest.athlete.school.id,
+          school_name: fastest.athlete.school.name,
+          time_seconds: fastest.time_seconds,
+          race_date: fastest.race.meet.meet_date,
+          grade: 'Overall'
+        })
+      }
+
+      // Girls records by grade (9-12)
+      for (const result of girlsResults) {
+        const raceYear = new Date(result.race.meet.meet_date).getFullYear()
+        const grade = 12 - (result.athlete.graduation_year - raceYear)
+        
+        if (grade >= 9 && grade <= 12) {
+          const key = `grade${grade}`
+          if (!girlsRecordsMap.has(key)) {
+            girlsRecordsMap.set(key, {
+              athlete_id: result.athlete.id,
+              athlete_name: `${result.athlete.first_name} ${result.athlete.last_name}`,
+              school_id: result.athlete.school.id,
+              school_name: result.athlete.school.name,
+              time_seconds: result.time_seconds,
+              race_date: result.race.meet.meet_date,
+              grade: grade
+            })
+          }
+        }
+      }
+
+      // Convert to arrays in proper order (Overall, then 9-12)
+      const orderedBoysRecords: CourseRecord[] = []
+      const orderedGirlsRecords: CourseRecord[] = []
+
+      if (boysRecordsMap.has('Overall')) orderedBoysRecords.push(boysRecordsMap.get('Overall')!)
+      for (let grade = 9; grade <= 12; grade++) {
+        const key = `grade${grade}`
+        if (boysRecordsMap.has(key)) orderedBoysRecords.push(boysRecordsMap.get(key)!)
+      }
+
+      if (girlsRecordsMap.has('Overall')) orderedGirlsRecords.push(girlsRecordsMap.get('Overall')!)
+      for (let grade = 9; grade <= 12; grade++) {
+        const key = `grade${grade}`
+        if (girlsRecordsMap.has(key)) orderedGirlsRecords.push(girlsRecordsMap.get(key)!)
+      }
+
+      setBoysRecords(orderedBoysRecords)
+      setGirlsRecords(orderedGirlsRecords)
+
+    } catch (err) {
+      console.error('Error loading course records:', err)
     }
   }
 
@@ -201,12 +372,12 @@ export default function IndividualCoursePage({ params }: Props) {
                           {getDifficultyLabel(course.mile_difficulty)}
                         </span>
                         <span className="text-xs text-gray-500">
-                          {course.mile_difficulty.toFixed(3)}x vs track mile
+                          {course.mile_difficulty.toFixed(3)} multiplier
                         </span>
                       </div>
                     ) : (
                       <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
-                        Not Rated
+                        No Rating
                       </span>
                     )}
                   </div>
@@ -258,6 +429,88 @@ export default function IndividualCoursePage({ params }: Props) {
             </div>
           </div>
         </div>
+
+        {/* Course Records Section */}
+        {(boysRecords.length > 0 || girlsRecords.length > 0) && (
+          <div className="bg-white rounded-lg shadow mb-6 p-6">
+            <h2 className="text-2xl font-bold text-black mb-6">Course Records</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Boys Records */}
+              <div>
+                <h3 className="text-xl font-bold text-blue-600 mb-4">Boys</h3>
+                <div className="space-y-3">
+                  {boysRecords.map((record, index) => (
+                    <div key={index} className="border-b pb-3">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-semibold text-gray-700">
+                          {record.grade === 'Overall' ? 'Course Record' : `${record.grade}th Grade`}
+                        </span>
+                        <span className="font-bold text-black">
+                          {formatTime(record.time_seconds)}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        <a 
+                          href={`/athletes/${record.athlete_id}`}
+                          className="text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          {record.athlete_name}
+                        </a>
+                        {' - '}
+                        <a 
+                          href={`/schools/${record.school_id}`}
+                          className="text-green-600 hover:text-green-800"
+                        >
+                          {record.school_name}
+                        </a>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {formatDate(record.race_date)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Girls Records */}
+              <div>
+                <h3 className="text-xl font-bold text-pink-600 mb-4">Girls</h3>
+                <div className="space-y-3">
+                  {girlsRecords.map((record, index) => (
+                    <div key={index} className="border-b pb-3">
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="font-semibold text-gray-700">
+                          {record.grade === 'Overall' ? 'Course Record' : `${record.grade}th Grade`}
+                        </span>
+                        <span className="font-bold text-black">
+                          {formatTime(record.time_seconds)}
+                        </span>
+                      </div>
+                      <div className="text-sm text-gray-600">
+                        <a 
+                          href={`/athletes/${record.athlete_id}`}
+                          className="text-blue-600 hover:text-blue-800 font-medium"
+                        >
+                          {record.athlete_name}
+                        </a>
+                        {' - '}
+                        <a 
+                          href={`/schools/${record.school_id}`}
+                          className="text-green-600 hover:text-green-800"
+                        >
+                          {record.school_name}
+                        </a>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-1">
+                        {formatDate(record.race_date)}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tabs */}
         <div className="bg-white rounded-lg shadow mb-6">
