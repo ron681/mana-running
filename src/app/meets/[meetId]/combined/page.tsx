@@ -54,7 +54,24 @@ interface TeamScore {
   }[]
 }
 
-function calculateXcTimeTeamScores(results: CombinedResult[]): TeamScore[] {
+function calculateXcTimeTeamScores(results: CombinedResult[]): { 
+  completeTeams: TeamScore[], 
+  incompleteTeams: Array<{
+    schoolId: string
+    schoolName: string
+    totalRunners: number
+    runners: {
+      athleteId: string
+      athleteName: string
+      athleteGrade: string | null
+      time: number
+      xcTime: number
+      overallPlace: number
+      teamPlace: number
+      resultId: string
+    }[]
+  }>
+} {
   const schoolMap = new Map<string, CombinedResult[]>();
   for (const result of results) {
     if (result.school_id) {
@@ -65,10 +82,24 @@ function calculateXcTimeTeamScores(results: CombinedResult[]): TeamScore[] {
     }
   }
 
-  const teamScores: TeamScore[] = [];
-  for (const [schoolId, runners] of schoolMap) {
-    if (runners.length < 5) continue;
+  const completeTeams: TeamScore[] = [];
+  const incompleteTeams: Array<{
+    schoolId: string
+    schoolName: string
+    totalRunners: number
+    runners: {
+      athleteId: string
+      athleteName: string
+      athleteGrade: string | null
+      time: number
+      xcTime: number
+      overallPlace: number
+      teamPlace: number
+      resultId: string
+    }[]
+  }> = [];
 
+  for (const [schoolId, runners] of schoolMap) {
     const sortedRunners = runners.sort((a, b) => a.xc_time - b.xc_time);
     const teamRunners = sortedRunners.map((runner, index): {
       athleteId: string
@@ -92,9 +123,19 @@ function calculateXcTimeTeamScores(results: CombinedResult[]): TeamScore[] {
       resultId: runner.id,
     }));
 
+    if (runners.length < 5) {
+      incompleteTeams.push({
+        schoolId,
+        schoolName: runners[0].team_name,
+        totalRunners: runners.length,
+        runners: teamRunners,
+      });
+      continue;
+    }
+
     const totalTime = teamRunners.slice(0, 5).reduce((sum, runner) => sum + runner.xcTime, 0);
 
-    teamScores.push({
+    completeTeams.push({
       schoolId,
       schoolName: runners[0].team_name,
       place: 0,
@@ -104,7 +145,10 @@ function calculateXcTimeTeamScores(results: CombinedResult[]): TeamScore[] {
     });
   }
 
-  return teamScores;
+  // Sort incomplete teams alphabetically
+  incompleteTeams.sort((a, b) => a.schoolName.localeCompare(b.schoolName));
+
+  return { completeTeams, incompleteTeams };
 }
 
 export default async function CombinedResultsPage({
@@ -205,8 +249,8 @@ export default async function CombinedResultsPage({
   const boyResults = combinedResults.filter(r => r.race_gender === 'M');
   const girlResults = combinedResults.filter(r => r.race_gender === 'F');
 
-  const boysTeamScores = calculateXcTimeTeamScores(boyResults);
-  const girlsTeamScores = calculateXcTimeTeamScores(girlResults);
+const { completeTeams: boysTeamScores, incompleteTeams: boysIncompleteTeams } = calculateXcTimeTeamScores(boyResults);
+  const { completeTeams: girlsTeamScores, incompleteTeams: girlsIncompleteTeams } = calculateXcTimeTeamScores(girlResults);
 
   // Prepare qualifying athlete IDs for displacement (top 7 per team, separated by gender)
   const boysQualifyingAthleteIds = new Set<string>();
@@ -312,6 +356,51 @@ export default async function CombinedResultsPage({
             )}
           </div>
         </div>
+        {boysIncompleteTeams.length > 0 && (
+          <div id="boys-incomplete" className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Incomplete Boys Teams</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Teams with fewer than 5 finishers (not eligible for team scoring)
+              </p>
+            </div>
+            <div className="p-6">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">School</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Finishers</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {boysIncompleteTeams.map((team) => (
+                      <tr key={team.schoolId} className="hover:bg-gray-50">
+                        <td className="px-4 py-2">
+                          <div className="font-medium">{team.schoolName}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {team.totalRunners} {team.totalRunners === 1 ? 'runner' : 'runners'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="space-x-1">
+                            {team.runners.map((runner) => (
+                              <span key={runner.resultId} className="inline-block">
+                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                  #{runner.teamPlace}: {runner.overallPlace}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+)}
 
         <div id="girls-team" className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="px-6 py-4 bg-pink-50 border-b border-gray-200">
@@ -347,7 +436,54 @@ export default async function CombinedResultsPage({
           </div>
         </div>
 
+        {girlsIncompleteTeams.length > 0 && (
+          <div id="girls-incomplete" className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+              <h2 className="text-xl font-semibold text-gray-900">Incomplete Girls Teams</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Teams with fewer than 5 finishers (not eligible for team scoring)
+              </p>
+            </div>
+            <div className="p-6">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">School</th>
+                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Finishers</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {girlsIncompleteTeams.map((team) => (
+                      <tr key={team.schoolId} className="hover:bg-gray-50">
+                        <td className="px-4 py-2">
+                          <div className="font-medium">{team.schoolName}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {team.totalRunners} {team.totalRunners === 1 ? 'runner' : 'runners'}
+                          </div>
+                        </td>
+                        <td className="px-4 py-2">
+                          <div className="space-x-1">
+                            {team.runners.map((runner) => (
+                              <span key={runner.resultId} className="inline-block">
+                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                  #{runner.teamPlace}: {runner.overallPlace}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
         <ResultsTable boysResults={boysSortedResults} girlsResults={girlsSortedResults} boysTeamScores={boysTeamScores} girlsTeamScores={girlsTeamScores} />
+
       </div>
     </div>
   );

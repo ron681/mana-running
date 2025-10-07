@@ -5,8 +5,9 @@ import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 import { getGradeDisplay } from '@/lib/grade-utils'
 import React from 'react'
-import { DeleteRaceActions, DeleteResultButton } from '@/components/race-delete-buttons'
+import { DeleteRaceActions } from '@/components/race-delete-buttons'
 import { isAdmin } from '@/lib/auth/admin'
+import IndividualResultsTable from '@/components/IndividualResultsTable'
 
 interface RaceResult {
   id: string
@@ -15,7 +16,9 @@ interface RaceResult {
   athlete_name: string
   athlete_grade: string | null
   team_name: string
+  school_id: string
   time_seconds: number | null
+  scoringPlace: number | null
 }
 
 interface Race {
@@ -86,7 +89,11 @@ const course = meet?.courses ? (Array.isArray(meet.courses) ? meet.courses[0] : 
         first_name,
         last_name,
         graduation_year,
-        schools!inner(name)
+        current_school_id,
+        schools!inner(
+          id,
+          name
+        )
       )
     `)
     .eq('race_id', params.raceId)
@@ -99,10 +106,8 @@ const course = meet?.courses ? (Array.isArray(meet.courses) ? meet.courses[0] : 
 
 // Transform results to match expected format
 const raceResults: RaceResult[] = results?.map((result) => {
-  // Safe array access helpers
   const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes;
   const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null;
-  
   
   return {
     id: result.id,
@@ -111,7 +116,9 @@ const raceResults: RaceResult[] = results?.map((result) => {
     athlete_name: `${athlete?.first_name} ${athlete?.last_name}`,
     athlete_grade: getGradeDisplay(athlete?.graduation_year, meet?.meet_date),
     team_name: school?.name || 'Unknown School',
-    time_seconds: result.time_seconds
+    school_id: school?.id || '',
+    time_seconds: result.time_seconds,
+    scoringPlace: null  // Will be calculated below
   }
 }) || []
 
@@ -126,17 +133,17 @@ const raceResults: RaceResult[] = results?.map((result) => {
 
   // Group results by team for team standings
   const teamResults = timedResults.reduce((acc, result) => {
-    if (!acc[result.team_name]) {
-      acc[result.team_name] = []
+    if (!acc[result.school_id]) {
+      acc[result.school_id] = []
     }
-    acc[result.team_name].push(result)
+    acc[result.school_id].push(result)
     
     return acc
   }, {} as Record<string, RaceResult[]>)
 
 // Calculate team scores with proper displacing logic
-const teamStandings = Object.entries(teamResults)
-  .map(([teamName, runners]) => {
+const allTeamStandings = Object.entries(teamResults)
+  .map(([schoolId, runners]) => {
     // Determine runner status
     const runnersWithStatus = runners.map((runner, index) => {
       let status: 'counting' | 'displacer' | 'non-scoring';
@@ -153,21 +160,56 @@ const teamStandings = Object.entries(teamResults)
     const score = countingRunners.reduce((sum, runner) => sum + runner.place, 0);
     
     return {
-      teamName,
+      schoolId,
+      teamName: runners[0].team_name,
       score,
       countingRunners,
       displacers,
       nonScoring: runnersWithStatus.filter(r => r.status === 'non-scoring'),
-      totalRunners: runners.length
+      totalRunners: runners.length,
+      allRunners: runnersWithStatus
     };
-  })
+  });
+
+// Separate complete and incomplete teams
+const teamStandings = allTeamStandings
   .filter(team => team.countingRunners.length >= 5)
   .sort((a, b) => a.score - b.score);
 
-  
+const incompleteTeams = allTeamStandings
+  .filter(team => team.countingRunners.length < 5)
+  .sort((a, b) => a.teamName.localeCompare(b.teamName));
 
   
-      
+// Get qualifying athlete IDs (top 7 from complete teams) for displacement
+const qualifyingAthleteIds = new Set<string>();
+teamStandings.forEach(team => {
+  team.countingRunners.forEach(runner => qualifyingAthleteIds.add(runner.athlete_id));
+  team.displacers.forEach(runner => qualifyingAthleteIds.add(runner.athlete_id));
+});
+
+// Assign scoring places AFTER displacement (only to qualifying athletes)
+let scoringPlace = 1;
+const timedResultsWithScoring = timedResults.map(result => {
+  if (qualifyingAthleteIds.has(result.athlete_id)) {
+    result.scoringPlace = scoringPlace++;
+  } else {
+    result.scoringPlace = null; // Non-scoring (incomplete team or 8+)
+  }
+  return result;
+});
+
+// Calculate team scores using scoring places (not overall places)
+teamStandings.forEach(team => {
+  team.score = team.countingRunners.reduce((sum, runner) => {
+    const resultWithScoring = timedResultsWithScoring.find(r => r.athlete_id === runner.athlete_id);
+    return sum + (resultWithScoring?.scoringPlace || 0);
+  }, 0);
+});
+
+// Sort team standings by score
+teamStandings.sort((a, b) => a.score - b.score);
+
   return (
     <div className="container mx-auto px-4 py-8">
       {/* Header */}
@@ -246,112 +288,13 @@ const teamStandings = Object.entries(teamResults)
         </div>
       ) : (
         <div className="space-y-8">
-          {/* Individual Results */}
-          <div className="bg-white rounded-lg shadow-md overflow-hidden">
-            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-              <h2 className="text-xl font-semibold text-gray-900">Individual Results</h2>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="min-w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Place
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Name
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Team
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-  Time
-</th>
-{admin && (
-  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">
-    Actions
-  </th>
-)}
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {timedResults.map((result, index) => (
-                    <tr key={result.id} className={`hover:bg-gray-50 ${index < 3 ? 'bg-yellow-50' : ''}`}>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <span className={`text-sm font-medium ${index === 0 ? 'text-yellow-600' : index === 1 ? 'text-gray-600' : index === 2 ? 'text-orange-600' : 'text-gray-900'}`}>
-                            {result.place}
-                          </span>
-                          {index < 3 && (
-                            <span className="ml-2 text-lg">
-                              {index === 0 ? '🥇' : index === 1 ? '🥈' : '🥉'}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-  <Link 
-    href={`/athletes/${result.athlete_id}`}
-    className="text-blue-600 hover:text-blue-800 hover:underline"
-  >
-    {result.athlete_name}
-  </Link>
-</div>
-                        {result.athlete_grade && (
-                          <div className="text-sm text-gray-500">
-                            Grade {result.athlete_grade}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {result.team_name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-900">
-  {result.time_seconds ? formatTime(result.time_seconds) : 'DNF'}
-</td>
-{admin && (
-  <td className="px-6 py-4 whitespace-nowrap text-right">
-    <DeleteResultButton resultId={result.id} raceId={params.raceId} />
-  </td>
-)}
-                    </tr>
-                  ))}
-                  
-                  {/* Non-timed results (DNF, DNS, etc.) */}
-                  {untimedResults.map((result) => (
-                    <tr key={result.id} className="hover:bg-gray-50 bg-gray-25">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                        {result.place || '-'}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">
-  <Link 
-    href={`/athletes/${result.athlete_id}`}
-    className="text-blue-600 hover:text-blue-800 hover:underline"
-  >
-    {result.athlete_name}
-  </Link>
-</div>
-                        {result.athlete_grade && (
-                          <div className="text-sm text-gray-400">
-                            Grade {result.athlete_grade}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                        {result.team_name}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                        DNF
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Individual Results - Client Component */}
+          <IndividualResultsTable 
+            timedResults={timedResultsWithScoring}
+            untimedResults={untimedResults}
+            raceId={params.raceId}
+            isAdmin={admin}
+          />
 
           {/* Team Standings */}
           {teamStandings.length > 0 && (
@@ -359,7 +302,7 @@ const teamStandings = Object.entries(teamResults)
               <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
                 <h2 className="text-xl font-semibold text-gray-900">Team Standings</h2>
                 <p className="text-sm text-gray-600 mt-1">
-                  Based on sum of top 5 finishers per team
+                  Based on sum of top 5 finishers per team (after displacement)
                 </p>
               </div>
               
@@ -383,7 +326,7 @@ const teamStandings = Object.entries(teamResults)
                   </thead>
 <tbody className="bg-white divide-y divide-gray-200">
   {teamStandings.map((team, index) => (
-    <React.Fragment key={team.teamName}>
+    <React.Fragment key={team.schoolId}>
       <tr className={`hover:bg-gray-50 ${index < 3 ? 'bg-blue-50' : ''}`}>
         <td className="px-6 py-4 whitespace-nowrap">
           <div className="flex items-center">
@@ -412,13 +355,16 @@ const teamStandings = Object.entries(teamResults)
             <div>
               <span className="text-xs font-medium text-green-700">Scorers (1-5):</span>
               <div className="space-x-1 mt-1">
-                {team.countingRunners.map((runner, i) => (
-                  <span key={runner.id} className="inline-block">
-                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
-                      #{runner.teamPlace}: {runner.place}
+                {team.countingRunners.map((runner, i) => {
+                  const resultWithScoring = timedResultsWithScoring.find(r => r.athlete_id === runner.athlete_id);
+                  return (
+                    <span key={runner.id} className="inline-block">
+                      <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-green-100 text-green-800">
+                        #{runner.teamPlace}: {resultWithScoring?.scoringPlace || '-'}
+                      </span>
                     </span>
-                  </span>
-                ))}
+                  );
+                })}
               </div>
             </div>
             
@@ -427,13 +373,16 @@ const teamStandings = Object.entries(teamResults)
               <div>
                 <span className="text-xs font-medium text-yellow-700">Displacers (6-7):</span>
                 <div className="space-x-1 mt-1">
-                  {team.displacers.map((runner) => (
-                    <span key={runner.id} className="inline-block">
-                      <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                        #{runner.teamPlace}: {runner.place}
+                  {team.displacers.map((runner) => {
+                    const resultWithScoring = timedResultsWithScoring.find(r => r.athlete_id === runner.athlete_id);
+                    return (
+                      <span key={runner.id} className="inline-block">
+                        <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                          #{runner.teamPlace}: {resultWithScoring?.scoringPlace || '-'}
+                        </span>
                       </span>
-                    </span>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -457,13 +406,62 @@ const teamStandings = Object.entries(teamResults)
         </td>
       </tr>
     </React.Fragment>
-  ))}
+))}
 </tbody>
-
                 </table>
               </div>
             </div>
           )}
+
+          {/* Incomplete Teams */}
+          {incompleteTeams.length > 0 && (
+            <div id="incomplete-teams" className="bg-white rounded-lg shadow-md overflow-hidden mt-6">
+              <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-900">Incomplete Teams</h2>
+                <p className="text-sm text-gray-600 mt-1">
+                  Teams with fewer than 5 finishers (not eligible for team scoring)
+                </p>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Team
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Finishers
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-gray-200">
+                    {incompleteTeams.map((team) => (
+                      <tr key={team.teamName} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 text-sm font-medium text-gray-900">
+                          <div>{team.teamName}</div>
+                          <div className="text-xs text-gray-500 mt-1">
+                            {team.totalRunners} {team.totalRunners === 1 ? 'runner' : 'runners'}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="space-x-1">
+                            {team.allRunners.map((runner) => (
+                              <span key={runner.id} className="inline-block">
+                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-700">
+                                  #{runner.teamPlace}: {runner.place}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+)}
         </div>
       )}
     </div>
