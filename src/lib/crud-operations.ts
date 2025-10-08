@@ -155,26 +155,21 @@ export const meetCRUD = {
 async create(meetData: {
   name: string;
   date: string;
-  course_id: string;
   meet_type: string;
   weather_conditions?: string;
 }) {
   // Map the date field to meet_date for database
   const dbData = {
     name: meetData.name,
-    meet_date: meetData.date,        // ← Map date to meet_date
-    course_id: meetData.course_id,
+    meet_date: meetData.date,
     meet_type: meetData.meet_type,
     weather_conditions: meetData.weather_conditions
   };
 
   const { data, error } = await supabase
     .from('meets')
-    .insert(dbData)                  // ← Use mapped data
-    .select(`
-      *,
-      course:courses(name)
-    `)
+    .insert(dbData)
+    .select('*')
     .single();
   
   if (error) throw error;
@@ -185,7 +180,6 @@ async create(meetData: {
   async update(id: string, updates: Partial<{
     name: string;
     date: string;
-    course_id: string;
     meet_type: string;
     weather_conditions: string;
   }>) {
@@ -193,10 +187,7 @@ async create(meetData: {
       .from('meets')
       .update(updates)
       .eq('id', id)
-      .select(`
-        *,
-        course:courses(name)
-      `)
+      .select('*')
       .single();
     
     if (error) throw error;
@@ -281,7 +272,6 @@ export const courseCRUD = {
   async create(meetData: { 
     name: string; 
     date: string;
-    course_id: string; 
     meet_type: string 
   }) {
     const { data, error } = await supabase
@@ -289,7 +279,6 @@ export const courseCRUD = {
       .insert({
         name: meetData.name,
         meet_date: meetData.date,
-        course_id: meetData.course_id,
         meet_type: meetData.meet_type
       })
       .select()

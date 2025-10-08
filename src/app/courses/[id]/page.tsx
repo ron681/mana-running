@@ -81,13 +81,25 @@ const [currentPage, setCurrentPage] = useState(1)
       
       setCourse(currentCourse)
 
-      // Load meets for this course
-      const allMeets = await meetCRUD.getAll()
-      const courseMeets = allMeets?.filter(meet => 
-        meet.course_id === params.id
-      ) || []
+      // Load meets for this course by finding races with this course_id
+      const { data: racesOnCourse } = await supabase
+        .from('races')
+        .select('meet_id')
+        .eq('course_id', params.id)
       
-      setMeets(courseMeets)
+      const meetIds = [...new Set(racesOnCourse?.map(r => r.meet_id) || [])]
+      
+      if (meetIds.length > 0) {
+        const { data: courseMeets } = await supabase
+          .from('meets')
+          .select('*')
+          .in('id', meetIds)
+          .order('meet_date', { ascending: false })
+        
+        setMeets(courseMeets || [])
+      } else {
+        setMeets([])
+      }
 
       // Load course records
       await loadCourseRecords(params.id)
