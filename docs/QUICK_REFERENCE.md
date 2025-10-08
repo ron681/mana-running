@@ -65,14 +65,40 @@ ORDER BY m.date DESC;
 
 ### Find Course PRs
 ```sql
-SELECT a.first_name, a.last_name, MIN(r.finish_time) as pr
+SELECT a.first_name, a.last_name, MIN(r.time_seconds) as pr
 FROM results r
 JOIN athletes a ON a.id = r.athlete_id
-JOIN meets m ON m.id = r.meet_id
-WHERE m.course_name = 'Crystal Springs'
+JOIN races ra ON ra.id = r.race_id
+JOIN courses c ON c.id = ra.course_id
+WHERE c.name = 'Crystal Springs'
 GROUP BY a.id, a.first_name, a.last_name
 ORDER BY pr ASC
 LIMIT 10;
+```
+
+### Verify Race Participant Counts
+```sql
+-- Check races where stored count doesn't match actual results
+SELECT 
+  r.id,
+  r.name,
+  r.total_participants as stored_count,
+  (SELECT COUNT(*) FROM results WHERE race_id = r.id) as actual_count,
+  r.total_participants - (SELECT COUNT(*) FROM results WHERE race_id = r.id) as diff
+FROM races r
+WHERE r.total_participants IS NOT NULL
+  AND r.total_participants != (SELECT COUNT(*) FROM results WHERE race_id = r.id)
+ORDER BY ABS(r.total_participants - (SELECT COUNT(*) FROM results WHERE race_id = r.id)) DESC
+LIMIT 20;
+```
+
+### Find Races by Course
+```sql
+SELECT r.id, r.name, r.gender, r.category, m.name as meet_name, m.meet_date
+FROM races r
+JOIN meets m ON m.id = r.meet_id
+WHERE r.course_id = '<course-id>'
+ORDER BY m.meet_date DESC;
 ```
 
 ---
@@ -131,6 +157,22 @@ if (finishTime < 300 || finishTime > 2400) {
    ```
 2. Review query in Supabase → Database → Query Performance
 3. Add LIMIT to large result sets
+
+### Race Participant Counts Wrong?
+1. Check if trigger exists:
+   ```sql
+   SELECT trigger_name FROM information_schema.triggers
+   WHERE event_object_table = 'results'
+     AND trigger_name = 'update_race_participants_trigger';
+   ```
+2. If missing, create trigger (see IMMEDIATE_ACTION_ITEMS.md)
+3. Fix existing counts:
+   ```sql
+   UPDATE races r
+   SET total_participants = (
+     SELECT COUNT(*) FROM results WHERE race_id = r.id
+   );
+   ```
 
 ### Auth Errors?
 1. Check environment variables in Vercel

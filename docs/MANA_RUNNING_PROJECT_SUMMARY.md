@@ -27,10 +27,19 @@
 ### Database Structure (Key Tables)
 - `athletes` - Athlete records with unique constraint
 - `schools` - High school/team data
+- `courses` - Cross country courses with ratings and difficulty
 - `meets` - Meet/competition information
-- `races` - Individual race events within meets
+- `races` - Individual race events within meets (FK to meets, courses)
 - `results` - Performance results (FK to athletes, races, meets)
 - `school_transfers` - Athlete school transfer history (FK to athletes)
+
+### Critical Relationships
+```
+courses (id) <--FK-- races (course_id)
+meets (id) <--FK-- races (meet_id)
+races (id) <--FK-- results (race_id)
+athletes (id) <--FK-- results (athlete_id)
+```
 
 ### Critical Constraints
 ```sql
@@ -145,6 +154,52 @@ return newAthlete.id;
 
 ---
 
+## ⚠️ KNOWN ISSUES & PENDING FIXES
+
+### 1. Race Total Participants Count (CRITICAL)
+**Status:** Identified October 2025  
+**Issue:** The `total_participants` field on `races` table contains incorrect/stale values. This field should match the actual count of results for each race but is not automatically maintained.
+
+**Impact:**
+- Race statistics show wrong participant counts
+- Course performance metrics may be inaccurate
+- Team scoring calculations could be affected
+
+**Root Cause:**
+- No trigger to auto-update `total_participants` when results are inserted/updated/deleted
+- Manual imports may not update this field
+- Historical data has accumulated inconsistencies
+
+**Solution:** See IMMEDIATE_ACTION_ITEMS.md #1 for complete fix (trigger creation + data update)
+
+**Quick Verification:**
+```sql
+-- Find races with count mismatches
+SELECT 
+  r.id, r.name,
+  r.total_participants as stored,
+  (SELECT COUNT(*) FROM results WHERE race_id = r.id) as actual
+FROM races r
+WHERE r.total_participants != (SELECT COUNT(*) FROM results WHERE race_id = r.id)
+LIMIT 10;
+```
+
+### 2. Course-Race Relationship
+**Status:** Working correctly  
+**Note:** The `races` table has `course_id` (FK to `courses.id`). This relationship is critical for:
+- Course performance tracking
+- Course difficulty ratings
+- Course-specific PRs
+- Historical course comparisons
+
+**Schema:**
+- `courses.id` → Primary key
+- `races.course_id` → Foreign key to courses
+- One course can have many races
+- Each race is associated with one course (nullable)
+
+---
+
 ## 🔧 CRITICAL MAINTENANCE TASKS
 
 ### 1. Supabase Auth Migration (HIGH PRIORITY)
@@ -182,26 +237,29 @@ export const supabase = createBrowserClient(
 **Recommended Indexes:**
 ```sql
 -- Speed up athlete lookups
-CREATE INDEX idx_athletes_school_grad 
+CREATE INDEX IF NOT EXISTS idx_athletes_school_grad 
 ON athletes(current_school_id, graduation_year);
 
 -- Speed up results queries
-CREATE INDEX idx_results_athlete 
+CREATE INDEX IF NOT EXISTS idx_results_athlete 
 ON results(athlete_id);
 
-CREATE INDEX idx_results_race 
+CREATE INDEX IF NOT EXISTS idx_results_race 
 ON results(race_id);
 
-CREATE INDEX idx_results_meet 
+CREATE INDEX IF NOT EXISTS idx_results_meet 
 ON results(meet_id);
 
 -- Speed up meet searches
-CREATE INDEX idx_meets_date 
-ON meets(date DESC);
+CREATE INDEX IF NOT EXISTS idx_meets_date 
+ON meets(meet_date DESC);
 
 -- Speed up race queries
-CREATE INDEX idx_races_meet 
+CREATE INDEX IF NOT EXISTS idx_races_meet 
 ON races(meet_id);
+
+CREATE INDEX IF NOT EXISTS idx_races_course 
+ON races(course_id);
 ```
 
 ### 3. Data Validation Rules

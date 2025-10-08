@@ -13,7 +13,131 @@
 
 ## 🔴 CRITICAL - DO IMMEDIATELY
 
-### 1. Prevent Future Duplicates in Application Code
+### 1. Fix Race Total Participants Count
+**Priority:** CRITICAL  
+**Time:** 45 minutes
+
+**Issue:** The `total_participants` field on `races` table contains incorrect values. This field should be calculated from actual results count.
+
+**Solution:**
+
+**Step 1: Update existing races with correct counts**
+```sql
+-- Run in Supabase SQL Editor
+UPDATE races r
+SET total_participants = (
+  SELECT COUNT(*)
+  FROM results res
+  WHERE res.race_id = r.id
+)
+WHERE r.id IN (
+  SELECT DISTINCT race_id 
+  FROM results 
+  WHERE race_id IS NOT NULL
+);
+
+-- Verify the update
+SELECT 
+  r.id,
+  r.name,
+  r.total_participants as stored_count,
+  (SELECT COUNT(*) FROM results WHERE race_id = r.id) as actual_count
+FROM races r
+WHERE r.total_participants != (SELECT COUNT(*) FROM results WHERE race_id = r.id)
+LIMIT 10;
+```
+
+**Step 2: Create function to auto-update on result changes**
+```sql
+-- Create function to update participant count
+CREATE OR REPLACE FUNCTION update_race_participants()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE races
+  SET total_participants = (
+    SELECT COUNT(*)
+    FROM results
+    WHERE race_id = COALESCE(NEW.race_id, OLD.race_id)
+  )
+  WHERE id = COALESCE(NEW.race_id, OLD.race_id);
+  
+  RETURN COALESCE(NEW, OLD);
+END;
+$$ LANGUAGE plpgsql;
+
+-- Create trigger on results table
+DROP TRIGGER IF EXISTS update_race_participants_trigger ON results;
+CREATE TRIGGER update_race_participants_trigger
+AFTER INSERT OR UPDATE OR DELETE ON results
+FOR EACH ROW
+EXECUTE FUNCTION update_race_participants();
+```
+
+**Step 3: Add validation to application code**
+
+File: `/src/lib/crud-operations.ts` (or wherever results are created)
+
+```typescript
+// After inserting results, verify count matches
+const { data: race } = await supabase
+  .from('races')
+  .select('total_participants')
+  .eq('id', raceId)
+  .single();
+
+const { count: actualCount } = await supabase
+  .from('results')
+  .select('*', { count: 'exact', head: true })
+  .eq('race_id', raceId);
+
+if (race?.total_participants !== actualCount) {
+  console.error(`Mismatch: Race ${raceId} has ${race?.total_participants} stored but ${actualCount} actual results`);
+}
+```
+
+**Verification Checklist:**
+- [ ] Run UPDATE query to fix existing counts
+- [ ] Create trigger function and trigger
+- [ ] Test: Add a result, verify total_participants increments
+- [ ] Test: Delete a result, verify total_participants decrements
+- [ ] Add validation logging to application code
+
+---
+
+### 2. Prevent Future Duplicates in Application Code
+**Priority:** CRITICAL  
+**Time:** 30 minutes
+
+Add duplicate check before every athlete creation:
+
+**Files to Update:**
+- Any import/upload scripts
+- Admin athlete creation forms
+- API endpoints that create athletes
+- Meet result processors
+
+**Code to Add:**
+```typescript
+// Before inserting athlete
+const { data: existing } = await supabase
+  .from('athletes')
+  .select('id')
+  .eq('first_name', firstName)
+  .eq('last_name', lastName)
+  .eq('current_school_id', schoolId)
+  .eq('graduation_year', gradYear)
+  .single();
+
+if (existing) {
+  return existing.id; // Use existing
+}
+
+// Create new only if not found
+```
+
+---
+
+### 2. Prevent Future Duplicates in Application Code
 **Priority:** CRITICAL  
 **Time:** 30 minutes
 
@@ -50,7 +174,7 @@ if (existing) {
 - [ ] CSV upload processor
 - [ ] Any other athlete creation points
 
-### 2. Add Database Indexes
+### 3. Add Database Indexes
 **Priority:** HIGH  
 **Time:** 5 minutes
 
@@ -60,19 +184,20 @@ Massive performance improvement with these indexes:
 -- Run in Supabase SQL Editor
 
 -- Speed up athlete lookups
-CREATE INDEX idx_athletes_school_grad 
+CREATE INDEX IF NOT EXISTS idx_athletes_school_grad 
 ON athletes(current_school_id, graduation_year);
 
 -- Speed up results queries
-CREATE INDEX idx_results_athlete ON results(athlete_id);
-CREATE INDEX idx_results_race ON results(race_id);
-CREATE INDEX idx_results_meet ON results(meet_id);
+CREATE INDEX IF NOT EXISTS idx_results_athlete ON results(athlete_id);
+CREATE INDEX IF NOT EXISTS idx_results_race ON results(race_id);
+CREATE INDEX IF NOT EXISTS idx_results_meet ON results(meet_id);
 
 -- Speed up meet searches
-CREATE INDEX idx_meets_date ON meets(date DESC);
+CREATE INDEX IF NOT EXISTS idx_meets_date ON meets(meet_date DESC);
 
 -- Speed up race queries
-CREATE INDEX idx_races_meet ON races(meet_id);
+CREATE INDEX IF NOT EXISTS idx_races_meet ON races(meet_id);
+CREATE INDEX IF NOT EXISTS idx_races_course ON races(course_id);
 ```
 
 **Action:**
@@ -80,7 +205,7 @@ CREATE INDEX idx_races_meet ON races(meet_id);
 - [ ] Run in Supabase Dashboard → SQL Editor
 - [ ] Verify with: `\di` to list indexes
 
-### 3. Migrate Supabase Auth
+### 4. Migrate Supabase Auth
 **Priority:** HIGH  
 **Time:** 1-2 hours
 
@@ -125,7 +250,7 @@ export const supabase = createBrowserClient(
 
 ## 🟡 IMPORTANT - DO THIS WEEK
 
-### 4. Add Data Validation
+### 5. Add Data Validation
 **Priority:** MEDIUM  
 **Time:** 1 hour
 
@@ -154,7 +279,7 @@ if (meetDate > new Date()) {
 - [ ] Meet creation forms
 - [ ] API validation middleware
 
-### 5. Update Project Documentation
+### 6. Update Project Documentation
 **Priority:** MEDIUM  
 **Time:** 15 minutes
 
@@ -170,7 +295,7 @@ if (meetDate > new Date()) {
   └── DEPLOYMENT_GUIDE.md
   ```
 
-### 6. Set Up Error Monitoring
+### 7. Set Up Error Monitoring
 **Priority:** MEDIUM  
 **Time:** 30 minutes
 
@@ -193,20 +318,20 @@ Sentry.init({
 
 ## 🟢 NICE TO HAVE - DO THIS MONTH
 
-### 7. Performance Optimization
+### 8. Performance Optimization
 - [ ] Implement React Server Components for data fetching
 - [ ] Add pagination to large result sets
 - [ ] Optimize image loading with Next.js Image
 - [ ] Enable Vercel Analytics
 - [ ] Set up edge caching for static pages
 
-### 8. Testing Infrastructure
+### 9. Testing Infrastructure
 - [ ] Add Vitest for unit tests
 - [ ] Add Playwright for E2E tests
 - [ ] Set up GitHub Actions CI/CD
 - [ ] Add test coverage reporting
 
-### 9. User Features
+### 10. User Features
 - [ ] Athlete dashboard (personal stats)
 - [ ] Team comparison tool
 - [ ] Course PR tracker

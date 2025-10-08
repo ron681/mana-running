@@ -104,6 +104,25 @@ Complete SQL script that:
 
 ---
 
+### 6. **RACE_PARTICIPANTS_FIX.md** (7KB) ⚡ NEW
+**🔧 CRITICAL BUG FIX GUIDE**
+
+Complete guide to fixing race participant count issues:
+- Problem description and impact
+- Root cause analysis
+- Step-by-step SQL fix
+- Trigger creation for auto-updates
+- Testing procedures
+- Monitoring queries
+
+**Use this for:**
+- Fixing the `total_participants` field issue
+- Understanding race-course relationships
+- Setting up automatic count maintenance
+- Troubleshooting participant count problems
+
+---
+
 ## 🎯 RECOMMENDED READING ORDER
 
 ### For New Developers:
@@ -118,8 +137,13 @@ Complete SQL script that:
 
 ### For Database Work:
 1. **merge_athlete_duplicates.sql** - See what was done
-2. **MANA_RUNNING_PROJECT_SUMMARY.md** - Database structure
-3. **QUICK_REFERENCE.md** - Common queries
+2. **RACE_PARTICIPANTS_FIX.md** - Critical bug fix
+3. **MANA_RUNNING_PROJECT_SUMMARY.md** - Database structure
+4. **QUICK_REFERENCE.md** - Common queries
+
+### For Fixing Race Participants Issue (RIGHT NOW):
+1. **RACE_PARTICIPANTS_FIX.md** - Complete fix guide
+2. **IMMEDIATE_ACTION_ITEMS.md** - Verification checklist
 
 ---
 
@@ -154,21 +178,27 @@ Complete SQL script that:
 
 ---
 
-## ✅ WHAT WAS ACCOMPLISHED TODAY
+## ✅ WHAT WAS ACCOMPLISHED
 
-### Database Cleanup (Completed)
+### Database Cleanup (October 2025)
 - ✅ Identified 1,328 duplicate athlete records
 - ✅ Merged duplicates (5,805 → 4,477 unique athletes)
 - ✅ Updated all foreign key references (results, school_transfers)
 - ✅ Added unique constraint to prevent future duplicates
 - ✅ Verified data integrity (0 orphaned records)
 
-### Documentation (Completed)
+### Issues Identified (October 7, 2025)
+- ✅ Identified race `total_participants` count issue
+- ✅ Documented course-race relationship structure
+- ✅ Created comprehensive fix guide
+
+### Documentation (October 2025)
 - ✅ Created comprehensive project summary
 - ✅ Created GitHub README
 - ✅ Created prioritized action items checklist
 - ✅ Created daily reference card
 - ✅ Documented cleanup process
+- ✅ Created race participants fix guide (October 7, 2025)
 
 ---
 
@@ -176,15 +206,20 @@ Complete SQL script that:
 
 From IMMEDIATE_ACTION_ITEMS.md:
 
-1. **Add Duplicate Prevention to Code** (30 min)
+1. **Fix Race Participant Counts** (10 min) - URGENT
+   - Run SQL to fix existing data
+   - Create trigger for auto-updates
+   - See RACE_PARTICIPANTS_FIX.md for complete guide
+
+2. **Add Duplicate Prevention to Code** (30 min)
    - Update all athlete creation points
    - Add check before INSERT operations
 
-2. **Add Database Indexes** (5 min)
+3. **Add Database Indexes** (5 min)
    - Run index creation SQL
    - Massive performance boost
 
-3. **Migrate Supabase Auth** (1-2 hours)
+4. **Migrate Supabase Auth** (1-2 hours)
    - Remove deprecated helpers
    - Update to @supabase/ssr
 
@@ -197,7 +232,8 @@ See IMMEDIATE_ACTION_ITEMS.md for complete details.
 **Current State:**
 - ✅ Database cleaned and optimized
 - ✅ Unique constraints active
-- ✅ Documentation complete
+- ✅ Documentation complete and updated
+- 🔴 Race participant counts need fixing (critical)
 - ⏳ Auth migration pending
 - ⏳ Application-level duplicate prevention pending
 
@@ -206,6 +242,10 @@ See IMMEDIATE_ACTION_ITEMS.md for complete details.
 - 0 duplicate records
 - 0 orphaned foreign keys
 - Constraint active and enforced
+- ⚠️ Race participant counts inconsistent (fix available)
+
+**Known Issues:**
+- Race `total_participants` field incorrect (documented in RACE_PARTICIPANTS_FIX.md)
 
 ---
 
@@ -251,8 +291,10 @@ All documentation is in Markdown - easy to update and version control.
 ---
 
 **Documentation Created:** October 2025  
-**Total Files:** 5  
-**Total Size:** ~34KB  
+**Last Updated:** October 7, 2025  
+**Total Files:** 6  
+**Total Size:** ~41KB  
 **Status:** Complete and production-ready
 
-**📌 START HERE:** Open QUICK_REFERENCE.md for daily use
+**📌 START HERE:** Open QUICK_REFERENCE.md for daily use  
+**🔥 URGENT FIX:** Open RACE_PARTICIPANTS_FIX.md to fix participant counts
