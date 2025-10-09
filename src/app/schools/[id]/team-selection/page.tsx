@@ -2,7 +2,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClientComponentClient } from '@/lib/supabase/client'
 import { schoolCRUD } from '@/lib/crud-operations'
 import { formatTime } from '@/lib/utils'
 import TeamSelectionTable from '@/components/TeamSelectionTable'

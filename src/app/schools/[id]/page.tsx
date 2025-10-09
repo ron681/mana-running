@@ -3,7 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { schoolCRUD, athleteCRUD } from '@/lib/crud-operations'
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClientComponentClient } from '@/lib/supabase/client'
 
 interface School {
   id: string

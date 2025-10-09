@@ -27,12 +27,6 @@ interface Meet {
   name: string
   meet_date: string
   meet_type: string
-  courses: {
-    id: string
-    name: string
-    distance_meters: number
-    xc_time_rating: number
-  }[]
 }
 
 interface TeamScore {
@@ -158,20 +152,10 @@ export default async function CombinedResultsPage({
 }) {
   const supabaseClient = supabase;
 
+  // Get meet basic info (no course - that's in races now)
   const { data: meet, error: meetError } = await supabaseClient
     .from('meets')
-    .select(`
-      id,
-      name,
-      meet_date,
-      meet_type,
-      courses(
-        id,
-        name,
-        distance_meters,
-        xc_time_rating
-      )
-    `)
+    .select('id, name, meet_date, meet_type')
     .eq('id', params.meetId)
     .single();
 
@@ -180,51 +164,131 @@ export default async function CombinedResultsPage({
     notFound();
   }
 
-  const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses;
+  // Get course info from races (pick first race's course for XC time rating)
+  const { data: racesWithCourse, error: raceError } = await supabaseClient
+    .from('races')
+    .select(`
+      course:courses(
+        id,
+        name,
+        distance_meters,
+        xc_time_rating
+      )
+    `)
+    .eq('meet_id', params.meetId)
+    .limit(1)
+    .single();
+
+  if (raceError || !racesWithCourse) {
+    console.error('Error fetching race course:', raceError);
+    return <div>Error: No races found for this meet</div>;
+  }
+
+  const course = Array.isArray(racesWithCourse.course) 
+    ? racesWithCourse.course[0] 
+    : racesWithCourse.course;
+
   if (!course?.xc_time_rating) {
     console.error('Missing xc_time_rating for course:', course);
     return <div>Error: Course rating not found</div>;
   }
 
+  // Get all results for this meet
   const { data: results, error: resultsError } = await supabaseClient
     .from('results')
     .select(`
       id,
       place_overall,
       time_seconds,
-      meet_id,
       race_id,
-      athletes!inner(
+      athlete:athletes!inner(
         id,
         first_name,
         last_name,
         graduation_year,
         current_school_id,
-        schools(
+        school:schools(
           id,
           name
         )
       ),
-      races!inner(
+      race:races!inner(
         id,
         name,
         category,
         gender
       )
     `)
-    .eq('meet_id', params.meetId)
+    .eq('race_id', 'race.meet_id', params.meetId)
     .not('time_seconds', 'is', null)
     .order('time_seconds', { ascending: true });
 
+  // Alternative query if the above doesn't work - get all races first then filter
+  let finalResults = results;
   if (resultsError || !results) {
-    console.error('Error fetching results:', resultsError);
-    return <div>Error loading results</div>;
+    // Fallback: get races for this meet, then get results
+    const { data: races } = await supabaseClient
+      .from('races')
+      .select('id')
+      .eq('meet_id', params.meetId);
+    
+    if (races && races.length > 0) {
+      const raceIds = races.map(r => r.id);
+      const { data: resultsData, error: resultsErr } = await supabaseClient
+        .from('results')
+        .select(`
+          id,
+          place_overall,
+          time_seconds,
+          race_id,
+          athlete:athletes!inner(
+            id,
+            first_name,
+            last_name,
+            graduation_year,
+            current_school_id,
+            school:schools(
+              id,
+              name
+            )
+          ),
+          race:races!inner(
+            id,
+            name,
+            category,
+            gender
+          )
+        `)
+        .in('race_id', raceIds)
+        .not('time_seconds', 'is', null)
+        .order('time_seconds', { ascending: true });
+      
+      if (resultsErr) {
+        console.error('Error fetching results:', resultsErr);
+        return <div>Error loading results</div>;
+      }
+      finalResults = resultsData;
+    }
   }
 
-  const combinedResults: CombinedResult[] = results.map((result, index) => {
-    const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes;
-    const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null;
-    const race = Array.isArray(result.races) ? result.races[0] : result.races;
+  if (!finalResults || finalResults.length === 0) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <Link href={`/meets/${params.meetId}`} className="text-blue-600 hover:text-blue-800 mb-4 inline-block">
+          ← Back to Meet
+        </Link>
+        <div className="bg-white rounded-lg shadow-md p-6">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Combined Results - {meet.name}</h1>
+          <p className="text-gray-600">No results found for this meet.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const combinedResults: CombinedResult[] = finalResults.map((result, index) => {
+    const athlete = Array.isArray(result.athlete) ? result.athlete[0] : result.athlete;
+    const school = athlete?.school ? (Array.isArray(athlete.school) ? athlete.school[0] : athlete.school) : null;
+    const race = Array.isArray(result.race) ? result.race[0] : result.race;
 
     const timeInCentiseconds = result.time_seconds * 100;
 
@@ -249,7 +313,7 @@ export default async function CombinedResultsPage({
   const boyResults = combinedResults.filter(r => r.race_gender === 'M');
   const girlResults = combinedResults.filter(r => r.race_gender === 'F');
 
-const { completeTeams: boysTeamScores, incompleteTeams: boysIncompleteTeams } = calculateXcTimeTeamScores(boyResults);
+  const { completeTeams: boysTeamScores, incompleteTeams: boysIncompleteTeams } = calculateXcTimeTeamScores(boyResults);
   const { completeTeams: girlsTeamScores, incompleteTeams: girlsIncompleteTeams } = calculateXcTimeTeamScores(girlResults);
 
   // Prepare qualifying athlete IDs for displacement (top 7 per team, separated by gender)
@@ -309,6 +373,28 @@ const { completeTeams: boysTeamScores, incompleteTeams: boysIncompleteTeams } = 
         >
           ← Back to Meet
         </Link>
+
+        {/* XC Time Conversion Banner */}
+        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border-l-4 border-blue-500 rounded-lg p-6 mb-6 shadow-sm">
+          <div className="flex items-start">
+            <div className="flex-shrink-0">
+              <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div className="ml-4">
+              <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                📊 XC Time Conversion Applied
+              </h3>
+              <p className="text-blue-800 text-sm leading-relaxed">
+                All race times for this meet have been converted to <strong>XC Time</strong> to enable fair comparison of team performances across the day. 
+                This conversion accounts for differences in course difficulty, allowing teams who raced on different courses to be compared accurately. 
+                Team scores and placements shown below are based on these normalized XC times.
+              </p>
+            </div>
+          </div>
+        </div>
+
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h1 className="text-2xl font-bold text-gray-900 mb-2">
             Combined Results - {meet.name}
@@ -400,7 +486,7 @@ const { completeTeams: boysTeamScores, incompleteTeams: boysIncompleteTeams } = 
               </div>
             </div>
           </div>
-)}
+        )}
 
         <div id="girls-team" className="bg-white rounded-lg shadow-md overflow-hidden">
           <div className="px-6 py-4 bg-pink-50 border-b border-gray-200">

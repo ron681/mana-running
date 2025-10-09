@@ -1,5 +1,5 @@
 // app/meets/[meetId]/page.tsx
-import { createServerComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createServerComponentClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import Link from 'next/link'
 import { formatMeetDate, formatTime } from '@/lib/utils'
