@@ -221,7 +221,7 @@ npm uninstall @supabase/auth-helpers-nextjs
 
 Find all files using:
 ```typescript
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClientComponentClient } from '@/lib/supabase/client'
 ```
 
 Replace with:

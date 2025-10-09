@@ -222,7 +222,7 @@ npm uninstall @supabase/auth-helpers-nextjs
 Update auth client creation:
 ```typescript
 // OLD (deprecated)
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs'
+import { createClientComponentClient } from '@/lib/supabase/client'
 
 // NEW
 import { createBrowserClient } from '@supabase/ssr'
