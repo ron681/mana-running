@@ -51,21 +51,22 @@ export default function Home() {
       setError(null)
       
       // Load stats
-const [schoolsData, _athletes, coursesData, totalResultsCount, athleteCount] = await Promise.all([
-  schoolCRUD.getAll(),
-  Promise.resolve([]),
-  courseCRUD.getAll(),
-  resultCRUD.getTotalCount(),
-  athleteCRUD.getTotalCount()
-])
+      const [schoolsData, coursesData, totalResultsCount, athleteCount] = await Promise.all([
+        schoolCRUD.getAll(),
+        courseCRUD.getAll(),
+        resultCRUD.getTotalCount(),
+        athleteCRUD.getTotalCount()
+      ])
       
-setStats({
-  schools: schoolsData?.length || 0,
-  athletes: athleteCount || 0,
-  courses: coursesData?.length || 0,
-  results: totalResultsCount || 0
-})
+      setStats({
+        schools: schoolsData?.length || 0,
+        athletes: athleteCount || 0,
+        courses: coursesData?.length || 0,
+        results: totalResultsCount || 0
+      })
+
       // Load recent meets (last 10 days)
+      // Note: meetCRUD.getAll() no longer includes course data since course_id moved to races table
       const allMeets = await meetCRUD.getAll()
       if (allMeets) {
         const now = new Date()
@@ -92,7 +93,20 @@ setStats({
       
     } catch (err) {
       console.error('Error loading data:', err)
-      setError(`Failed to load data: ${(err instanceof Error ? err.message : String(err)) || 'Unknown error'}`)
+      
+      // Better error handling - extract the actual error message
+      let errorMessage = 'Unknown error'
+      if (err instanceof Error) {
+        errorMessage = err.message
+      } else if (err && typeof err === 'object') {
+        // Try to extract error details from Supabase error format
+        const errorObj = err as any
+        errorMessage = errorObj.message || errorObj.error_description || errorObj.hint || JSON.stringify(err)
+      } else {
+        errorMessage = String(err)
+      }
+      
+      setError(`Failed to load data: ${errorMessage}`)
     } finally {
       setLoading(false)
     }
@@ -130,7 +144,7 @@ setStats({
             </svg>
           </div>
           <div className="text-xl font-semibold mb-2 text-red-600">Connection Error</div>
-          <div className="text-slate-600 mb-6">{error}</div>
+          <div className="text-slate-600 mb-6 text-sm max-h-32 overflow-y-auto">{error}</div>
           <button 
             onClick={loadData}
             className="bg-red-600 text-white px-6 py-3 rounded-lg hover:bg-red-700 transition-colors font-medium"

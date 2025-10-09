@@ -142,163 +142,178 @@ export default function TeamSelectionPage({ params }: Props) {
     }
   }
 
-  const loadTeamRankings = async () => {
-    if (!school) return
+const loadTeamRankings = async () => {
+  if (!school) return
+  
+  try {
+    console.log('Loading team rankings for school:', school.id, 'season:', selectedSeason)
     
-    try {
-      console.log('Loading team rankings for school:', school.id, 'season:', selectedSeason)
-      
-      // Get all results for the school in the specified season with course data for XC Time calculation
-      // Results → Meets → Courses relationship path
-      const { data: results, error } = await supabase
-        .from('results')
-        .select(`
-          athlete_id,
-          time_seconds,
+    // Get all results for the school in the specified season
+    // Results → Races → Courses (for course data)
+    // Results → Races → Meets (for meet data)
+    const { data: results, error } = await supabase
+      .from('results')
+      .select(`
+        athlete_id,
+        time_seconds,
+        race_id,
+        season_year,
+        athletes!inner (
+          id,
+          first_name,
+          last_name,
+          gender,
+          graduation_year,
+          current_school_id
+        ),
+        races!inner (
+          id,
           meet_id,
-          season_year,
-          athletes!inner (
-            id,
-            first_name,
-            last_name,
-            gender,
-            graduation_year,
-            current_school_id
-          ),
-          meets!inner (
+          course_id,
+          meets (
             name,
-            meet_date,
-            course_id,
-            courses (
-              distance_meters,
-              mile_difficulty,
-              xc_time_rating
-            )
+            meet_date
+          ),
+          courses (
+            distance_meters,
+            mile_difficulty,
+            xc_time_rating
           )
-        `)
-        .eq('athletes.current_school_id', school.id)
-        .eq('season_year', selectedSeason)
-        .order('time_seconds', { ascending: true })
+        )
+      `)
+      .eq('athletes.current_school_id', school.id)
+      .eq('season_year', selectedSeason)
+      .order('time_seconds', { ascending: true })
+    
+    console.log('Team rankings query results:', results, 'Error:', error)
+    
+    if (error || !results) {
+      console.error('Error in team rankings query:', error)
+      setBoysRankings([])
+      setGirlsRankings([])
+      return
+    }
+    
+    // Group results by athlete and calculate XC Times
+    const athleteResults = new Map<string, {
+      athlete: any
+      times: { time: number; xcTime: number; date: string; meet_name: string }[]
+    }>()
+    
+    results.forEach(result => {
+      const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes
+      const race = Array.isArray(result.races) ? result.races[0] : result.races
       
-      console.log('Team rankings query results:', results, 'Error:', error)
-      
-      if (error || !results) {
-        console.error('Error in team rankings query:', error)
-        setBoysRankings([])
-        setGirlsRankings([])
+      if (!race) {
+        console.log('No race data for result:', result)
         return
       }
       
-      // Group results by athlete and calculate XC Times
-      const athleteResults = new Map<string, {
-        athlete: any
-        times: { time: number; xcTime: number; date: string; meet_name: string }[]
-      }>()
+      const meet = race.meets ? (Array.isArray(race.meets) ? race.meets[0] : race.meets) : null
+      const course = race.courses ? (Array.isArray(race.courses) ? race.courses[0] : race.courses) : null
       
-      results.forEach(result => {
-        const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes
-        const meet = Array.isArray(result.meets) ? result.meets[0] : result.meets
-        const course = meet?.courses ? (Array.isArray(meet.courses) ? meet.courses[0] : meet.courses) : null
-        
-        console.log('Processing result - athlete:', athlete, 'meet:', meet, 'course:', course)
-        
-        if (!athlete || !meet || !course) return
-        
-        // Calculate XC Time using NEW rating system (direct xc_time_rating multiplier)
-        const xcTime = result.time_seconds * course.xc_time_rating
-        
-        // Debug log
-        console.log('XC Time Debug:', {
-          rawTime: result.time_seconds,
-          distanceMeters: course.distance_meters,
-          mileDifficulty: course.mile_difficulty,
-          xcTimeRating: course.xc_time_rating,
-          xcTime: xcTime,
-          meetName: meet.name
-        })
-        
-        if (!athleteResults.has(result.athlete_id)) {
-          athleteResults.set(result.athlete_id, {
-            athlete,
-            times: []
-          })
-        }
-        
-        athleteResults.get(result.athlete_id)!.times.push({
-          time: result.time_seconds,
-          xcTime: Math.round(xcTime), // Round XC Time to whole centiseconds
-          date: meet.meet_date,
-          meet_name: meet.name
-        })
+      console.log('Processing result - athlete:', athlete, 'race:', race, 'meet:', meet, 'course:', course)
+      
+      if (!athlete || !meet || !course) {
+        console.log('Missing data - athlete:', !!athlete, 'meet:', !!meet, 'course:', !!course)
+        return
+      }
+      
+      // Calculate XC Time using rating system
+      const xcTime = result.time_seconds * course.xc_time_rating
+      
+      // Debug log
+      console.log('XC Time Debug:', {
+        rawTime: result.time_seconds,
+        distanceMeters: course.distance_meters,
+        mileDifficulty: course.mile_difficulty,
+        xcTimeRating: course.xc_time_rating,
+        xcTime: xcTime,
+        meetName: meet.name
       })
       
-      console.log('Athlete results map:', athleteResults)
-      
-      // Calculate statistics for each athlete using XC Times
-      const rankings: AthleteRanking[] = []
-      
-      athleteResults.forEach(({ athlete, times }) => {
-        if (times.length === 0) return
-        
-        // Sort times by XC Time performance (fastest first)
-        times.sort((a, b) => a.xcTime - b.xcTime)
-        
-        // Season PR (fastest XC Time)
-        const season_pr = times[0].xcTime
-        
-        // Top 3 average using XC Times
-        const top3Times = times.slice(0, Math.min(3, times.length))
-        const top_3_average = top3Times.length > 0 
-          ? Math.round(top3Times.reduce((sum, t) => sum + t.xcTime, 0) / top3Times.length)
-          : null
-        
-        // Last 3 average (most recent races) using XC Times
-        const sortedByDate = [...times].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        const last3Times = sortedByDate.slice(0, Math.min(3, sortedByDate.length))
-        const last_3_average = last3Times.length > 0
-          ? Math.round(last3Times.reduce((sum, t) => sum + t.xcTime, 0) / last3Times.length)
-          : null
-        
-        // Get recent races for detailed view (keep original time and XC time)
-        const recent_races = sortedByDate.slice(0, 5).map(race => ({
-          time: race.xcTime, // Use XC Time for display consistency
-          date: race.date,
-          meet_name: race.meet_name
-        }))
-        
-        rankings.push({
-          athlete_id: athlete.id,
-          athlete_name: `${athlete.last_name}, ${athlete.first_name}`,
-          gender: athlete.gender,
-          graduation_year: athlete.graduation_year,
-          season_pr,
-          top_3_average,
-          last_3_average,
-          race_count: times.length,
-          recent_races
+      if (!athleteResults.has(result.athlete_id)) {
+        athleteResults.set(result.athlete_id, {
+          athlete,
+          times: []
         })
+      }
+      
+      athleteResults.get(result.athlete_id)!.times.push({
+        time: result.time_seconds,
+        xcTime: Math.round(xcTime), // Round XC Time to whole centiseconds
+        date: meet.meet_date,
+        meet_name: meet.name
       })
+    })
+    
+    console.log('Athlete results map:', athleteResults)
+    
+    // Calculate statistics for each athlete using XC Times
+    const rankings: AthleteRanking[] = []
+    
+    athleteResults.forEach(({ athlete, times }) => {
+      if (times.length === 0) return
       
-      console.log('Final rankings using XC Time:', rankings)
+      // Sort times by XC Time performance (fastest first)
+      times.sort((a, b) => a.xcTime - b.xcTime)
       
-      // Separate by gender and sort by season PR (XC Time)
-      const boys = rankings
-        .filter(r => r.gender === 'M' || r.gender === 'Boys')
-        .sort((a, b) => (a.season_pr || Infinity) - (b.season_pr || Infinity))
+      // Season PR (fastest XC Time)
+      const season_pr = times[0].xcTime
       
-      const girls = rankings
-        .filter(r => r.gender === 'F' || r.gender === 'Girls')
-        .sort((a, b) => (a.season_pr || Infinity) - (b.season_pr || Infinity))
+      // Top 3 average using XC Times
+      const top3Times = times.slice(0, Math.min(3, times.length))
+      const top_3_average = top3Times.length > 0 
+        ? Math.round(top3Times.reduce((sum, t) => sum + t.xcTime, 0) / top3Times.length)
+        : null
       
-      console.log('Boys rankings (XC Time):', boys)
-      console.log('Girls rankings (XC Time):', girls)
+      // Last 3 average (most recent races) using XC Times
+      const sortedByDate = [...times].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+      const last3Times = sortedByDate.slice(0, Math.min(3, sortedByDate.length))
+      const last_3_average = last3Times.length > 0
+        ? Math.round(last3Times.reduce((sum, t) => sum + t.xcTime, 0) / last3Times.length)
+        : null
       
-      setBoysRankings(boys)
-      setGirlsRankings(girls)
-    } catch (err) {
-      console.error('Error loading team rankings:', err)
-    }
+      // Get recent races for detailed view
+      const recent_races = sortedByDate.slice(0, 5).map(race => ({
+        time: race.xcTime, // Use XC Time for display consistency
+        date: race.date,
+        meet_name: race.meet_name
+      }))
+      
+      rankings.push({
+        athlete_id: athlete.id,
+        athlete_name: `${athlete.last_name}, ${athlete.first_name}`,
+        gender: athlete.gender,
+        graduation_year: athlete.graduation_year,
+        season_pr,
+        top_3_average,
+        last_3_average,
+        race_count: times.length,
+        recent_races
+      })
+    })
+    
+    console.log('Final rankings using XC Time:', rankings)
+    
+    // Separate by gender and sort by season PR (XC Time)
+    const boys = rankings
+      .filter(r => r.gender === 'M' || r.gender === 'Boys')
+      .sort((a, b) => (a.season_pr || Infinity) - (b.season_pr || Infinity))
+    
+    const girls = rankings
+      .filter(r => r.gender === 'F' || r.gender === 'Girls')
+      .sort((a, b) => (a.season_pr || Infinity) - (b.season_pr || Infinity))
+    
+    console.log('Boys rankings (XC Time):', boys)
+    console.log('Girls rankings (XC Time):', girls)
+    
+    setBoysRankings(boys)
+    setGirlsRankings(girls)
+  } catch (err) {
+    console.error('Error loading team rankings:', err)
   }
+}
 
   const handleSeasonChange = (season: string) => {
     setSelectedSeason(parseInt(season))

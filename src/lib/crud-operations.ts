@@ -108,7 +108,7 @@ export const schoolCRUD = {
 // ==================== MEET CRUD OPERATIONS ====================
 
 export const meetCRUD = {
-  // GET: Fetch all meets with course and result count
+  // GET: Fetch all meets with races (no direct course relationship)
   async getAll() {
     const { data, error } = await supabase
       .from('meets')
@@ -129,18 +129,21 @@ export const meetCRUD = {
     return data;
   },
 
-  // GET: Fetch meet by ID with all results
+  // GET: Fetch meet by ID with all results (through races)
   async getById(id: string) {
     const { data, error } = await supabase
       .from('meets')
       .select(`
         *,
-        course:courses(*),
-        results(
+        races(
           *,
-          athlete:athletes(
+          course:courses(*),
+          results(
             *,
-            school:schools(name)
+            athlete:athletes(
+              *,
+              school:schools(name)
+            )
           )
         )
       `)
@@ -194,19 +197,25 @@ async create(meetData: {
     return data;
   },
 
-// DELETE: Delete meet and all results (ADMIN ONLY)
+// DELETE: Delete meet and all related data (ADMIN ONLY)
 async delete(id: string) {
-  
-  // Get result count for confirmation
-  const { data: results } = await supabase
-    .from('results')
+  // Get races for this meet
+  const { data: races } = await supabase
+    .from('races')
     .select('id')
     .eq('meet_id', id);
 
-  // Delete all results for this meet
-  if (results && results.length > 0) {
+  // Delete all results for all races in this meet
+  if (races && races.length > 0) {
+    const raceIds = races.map(race => race.id);
     await supabase
       .from('results')
+      .delete()
+      .in('race_id', raceIds);
+    
+    // Delete all races
+    await supabase
+      .from('races')
       .delete()
       .eq('meet_id', id);
   }
@@ -218,7 +227,7 @@ async delete(id: string) {
     .eq('id', id);
   
   if (error) throw error;
-  return { deletedResultsCount: results?.length || 0 };
+  return { deletedRacesCount: races?.length || 0 };
 }
 };
 
@@ -240,7 +249,7 @@ export const courseCRUD = {
         rating_confidence,
         rating_last_updated,
         total_results_count,
-        meets(count)
+        races(count)
       `)
       .order('name');
     
@@ -248,17 +257,20 @@ export const courseCRUD = {
     
     return data?.map(course => ({
       ...course,
-      meets_count: course.meets[0]?.count || 0
+      races_count: course.races[0]?.count || 0
     }));
   },
 
-  // GET: Fetch course by ID with meets and records
+  // GET: Fetch course by ID with races and meets
   async getById(id: string) {
     const { data, error } = await supabase
       .from('courses')
       .select(`
         *,
-        meets(*)
+        races(
+          *,
+          meet:meets(*)
+        )
       `)
       .eq('id', id)
       .single();
@@ -310,14 +322,14 @@ export const courseCRUD = {
 
   // DELETE: Delete course and handle related data
   async delete(id: string) {
-    // Check for related meets
-    const { data: meets } = await supabase
-      .from('meets')
+    // Check for related races (not meets - course_id is in races table now)
+    const { data: races } = await supabase
+      .from('races')
       .select('id')
       .eq('course_id', id);
 
-    if (meets && meets.length > 0) {
-      throw new Error(`Cannot delete course. ${meets.length} meets use this course. Delete meets first.`);
+    if (races && races.length > 0) {
+      throw new Error(`Cannot delete course. ${races.length} races use this course. Delete races first.`);
     }
 
     const { error } = await supabase
@@ -340,9 +352,13 @@ export const resultCRUD = {
       .select(`
         *,
         athlete:athletes(first_name, last_name, graduation_year, school:schools(name)),
-        meet:meets(name, meet_date, course:courses(name))
+        race:races(
+          name,
+          meet:meets(name, meet_date),
+          course:courses(name)
+        )
       `)
-      .order('meet_id', { ascending: false });
+      .order('created_at', { ascending: false });
     
     if (error) throw error;
     return data;
@@ -378,8 +394,8 @@ export const resultCRUD = {
   // POST: Create new result
   async create(resultData: {
     athlete_id: string;
-    meet_id: string;
-    time: string;
+    race_id: string;
+    time_seconds: number;
     place_overall: number;
     place_team?: number;
     season_year: number;
@@ -390,7 +406,10 @@ export const resultCRUD = {
       .select(`
         *,
         athlete:athletes(first_name, last_name, school:schools(name)),
-        meet:meets(name, meet_date)
+        race:races(
+          name,
+          meet:meets(name, meet_date)
+        )
       `)
       .single();
     
@@ -400,7 +419,7 @@ export const resultCRUD = {
 
   // PUT: Update result
   async update(id: string, updates: Partial<{
-    time: string;
+    time_seconds: number;
     place_overall: number;
     place_team: number;
     season_year: number;
@@ -412,7 +431,10 @@ export const resultCRUD = {
       .select(`
         *,
         athlete:athletes(first_name, last_name, school:schools(name)),
-        meet:meets(name, meet_date)
+        race:races(
+          name,
+          meet:meets(name, meet_date)
+        )
       `)
       .single();
     
@@ -428,7 +450,7 @@ async delete(id: string) {
     
     if (error) throw error;
     return true;
-  },   // ← COMMA ADDED
+  },
 
   // DELETE: Delete multiple results (ADMIN ONLY)
   async deleteMultiple(ids: string[]) {  

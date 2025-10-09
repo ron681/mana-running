@@ -32,11 +32,11 @@ interface Race {
     name: string
     meet_date: string
     meet_type: string
-    courses: {
-      name: string
-      distance_miles: number
-    }[]
-  }[]
+  }
+  courses: {
+    name: string
+    distance_miles: number
+  } | null
 }
 
 export default async function RaceResultsPage({
@@ -47,7 +47,7 @@ export default async function RaceResultsPage({
 const supabase = await createClient()
 const admin = await isAdmin(supabase)
 
-  // Get race details with meet info
+  // Get race details with meet info AND course info (course_id is in races now)
   const { data: race, error: raceError } = await supabase
     .from('races')
     .select(`
@@ -56,15 +56,15 @@ const admin = await isAdmin(supabase)
       category,
       gender,
       total_participants,
-      meets!inner(
+      meet:meets!inner(
         id,
         name,
         meet_date,
-        meet_type,
-        courses!inner(
-          name,
-          distance_miles
-        )
+        meet_type
+      ),
+      course:courses(
+        name,
+        distance_miles
       )
     `)
     .eq('id', params.raceId)
@@ -72,10 +72,12 @@ const admin = await isAdmin(supabase)
     .single()
 
   if (raceError || !race) {
+    console.error('Race error:', raceError)
     notFound()
   }
-const meet = Array.isArray(race.meets) ? race.meets[0] : race.meets;
-const course = meet?.courses ? (Array.isArray(meet.courses) ? meet.courses[0] : meet.courses) : null;
+
+  const meet = Array.isArray(race.meet) ? race.meet[0] : race.meet
+  const course = Array.isArray(race.course) ? race.course[0] : race.course
 
   // Get all results for this race
   const { data: results, error: resultsError } = await supabase
@@ -84,13 +86,13 @@ const course = meet?.courses ? (Array.isArray(meet.courses) ? meet.courses[0] : 
       id,
       place_overall,
       time_seconds,
-      athletes!inner(
+      athlete:athletes!inner(
         id,
         first_name,
         last_name,
         graduation_year,
         current_school_id,
-        schools!inner(
+        school:schools!inner(
           id,
           name
         )
@@ -106,8 +108,8 @@ const course = meet?.courses ? (Array.isArray(meet.courses) ? meet.courses[0] : 
 
 // Transform results to match expected format
 const raceResults: RaceResult[] = results?.map((result) => {
-  const athlete = Array.isArray(result.athletes) ? result.athletes[0] : result.athletes;
-  const school = athlete?.schools ? (Array.isArray(athlete.schools) ? athlete.schools[0] : athlete.schools) : null;
+  const athlete = Array.isArray(result.athlete) ? result.athlete[0] : result.athlete
+  const school = athlete?.school ? (Array.isArray(athlete.school) ? athlete.school[0] : athlete.school) : null
   
   return {
     id: result.id,
@@ -236,8 +238,14 @@ teamStandings.sort((a, b) => a.score - b.score);
               <p className="mb-2"><strong>Type:</strong> {meet?.meet_type}</p>            
               </div>
             <div>
-              <p className="mb-2"><strong>Course:</strong> {course?.name}</p>
-              <p className="mb-2"><strong>Distance:</strong> {course?.distance_miles} miles</p>
+              {course ? (
+                <>
+                  <p className="mb-2"><strong>Course:</strong> {course.name}</p>
+                  <p className="mb-2"><strong>Distance:</strong> {course.distance_miles} miles</p>
+                </>
+              ) : (
+                <p className="mb-2 text-gray-400">No course assigned</p>
+              )}
               <p className="mb-2"><strong>Participants:</strong> {race.total_participants}</p>
             </div>
           </div>

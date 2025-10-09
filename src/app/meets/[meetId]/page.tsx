@@ -5,25 +5,16 @@ import Link from 'next/link'
 import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
 
-interface Race {
+interface RaceData {
   id: string
   name: string
   category: string
   gender: string
-  total_participants: number
+  course_id: string | null
+  course_name: string | null
+  course_distance: number | null
+  results_count: number
   fastest_time: number | null
-}[]
-
-interface Meet {
-  id: string
-  name: string
-  meet_date: string
-  meet_type: string
-  courses: {
-    name: string
-    distance_miles: number
-  }
-  races: Race[]
 }
 
 export default async function MeetDetailPage({
@@ -33,63 +24,96 @@ export default async function MeetDetailPage({
 }) {
   const supabase = createServerComponentClient({ cookies })
   
-  // Get meet details with races and fastest times
-  const { data: meet, error } = await supabase
+  // Get the meet basic info
+  const { data: meet, error: meetError } = await supabase
     .from('meets')
-    .select(`
-      id,
-      name,
-      meet_date,
-      meet_type,
-      courses!inner(
-        name,
-        distance_miles
-      ),
-      races(
-        id,
-        name,
-        category,
-        gender,
-        total_participants,
-        results(
-          time_seconds
-        )
-      )
-    `)
+    .select('id, name, meet_date, meet_type')
     .eq('id', params.meetId)
     .single()
 
-  if (error || !meet) {
+  if (meetError || !meet) {
     notFound()
   }
-  // Safe course access
-const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses
 
-  // Process races to get fastest times
-  const processedRaces: Race[] = meet.races.map(race => {
-    const times = race.results.map(r => r.time_seconds).filter(Boolean)
+  // Get all races for this meet
+  const { data: races, error: racesError } = await supabase
+    .from('races')
+    .select(`
+      id,
+      name,
+      category,
+      gender,
+      course_id,
+      courses (
+        name,
+        distance_miles
+      )
+    `)
+    .eq('meet_id', params.meetId)
+    .order('category')
+    .order('gender')
+
+  if (racesError) {
+    console.error('Error loading races:', racesError)
+  }
+
+  // Get results count for each race
+  const processedRaces: RaceData[] = []
+  
+  for (const race of races || []) {
+    const { data: results } = await supabase
+      .from('results')
+      .select('time_seconds')
+      .eq('race_id', race.id)
+
+    const times = results?.map(r => r.time_seconds).filter(Boolean) || []
     const fastestTime = times.length > 0 ? Math.min(...times) : null
     
-    return {
+    const course = Array.isArray(race.courses) ? race.courses[0] : race.courses
+    
+    processedRaces.push({
       id: race.id,
       name: race.name,
       category: race.category,
       gender: race.gender,
-      total_participants: race.total_participants || 0,
+      course_id: race.course_id,
+      course_name: course?.name || null,
+      course_distance: course?.distance_miles || null,
+      results_count: results?.length || 0,
       fastest_time: fastestTime
-    }
-  })
+    })
+  }
 
-  // Sort races by category (Varsity, JV, Reserves) then by gender
-  const categoryOrder = { 'Varsity': 1, 'JV': 2, 'Reserves': 3 }
+  // Sort races by category then by gender
+  const categoryOrder: Record<string, number> = { 
+    'Varsity': 1, 
+    'Junior Varsity': 2, 
+    'JV': 2,
+    'Reserves': 3,
+    'Frosh-Soph': 4,
+    'Freshmen': 5
+  }
+  
   const sortedRaces = processedRaces.sort((a, b) => {
-    const categoryCompare = (categoryOrder[a.category as keyof typeof categoryOrder] || 999) - 
-                           (categoryOrder[b.category as keyof typeof categoryOrder] || 999)
+    // Extract category for sorting (look for keywords)
+    const getCategoryPriority = (cat: string) => {
+      if (cat.toLowerCase().includes('varsity') && !cat.toLowerCase().includes('junior')) return 1
+      if (cat.toLowerCase().includes('jv') || cat.toLowerCase().includes('junior')) return 2
+      if (cat.toLowerCase().includes('reserve')) return 3
+      if (cat.toLowerCase().includes('frosh') || cat.toLowerCase().includes('soph')) return 4
+      if (cat.toLowerCase().includes('fresh')) return 5
+      return 999
+    }
+    
+    const categoryCompare = getCategoryPriority(a.category) - getCategoryPriority(b.category)
     if (categoryCompare !== 0) return categoryCompare
+    
+    // Boys before Girls
     return a.gender.localeCompare(b.gender)
   })
 
-  const totalParticipants = processedRaces.reduce((sum, race) => sum + race.total_participants, 0)
+  const totalRaces = sortedRaces.length
+  const totalParticipants = sortedRaces.reduce((sum, race) => sum + race.results_count, 0)
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -102,6 +126,7 @@ const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses
           ← Back to Meets
         </Link>
         
+        {/* Main Meet Info Box */}
         <div className="bg-white rounded-lg shadow-md p-6 mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">{meet.name}</h1>
           
@@ -110,16 +135,10 @@ const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses
               <p className="mb-2"><strong>Date:</strong> {formatMeetDate(meet.meet_date)}</p>
               <p className="mb-2"><strong>Type:</strong> {meet.meet_type}</p>
             </div>
-            <div>
-            <p className="mb-2"><strong>Course:</strong> {course?.name}</p>
-            <p className="mb-2"><strong>Distance:</strong> {course?.distance_miles} miles</p>
+            <div className="text-right md:text-left">
+              <p className="mb-2"><strong>Races:</strong> {totalRaces}</p>
+              <p className="mb-2"><strong>Total Runners:</strong> {totalParticipants}</p>
             </div>
-          </div>
-          
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <p className="text-lg font-medium text-gray-900">
-              {processedRaces.length} races • {totalParticipants} total participants
-            </p>
           </div>
         </div>
 
@@ -135,38 +154,71 @@ const course = Array.isArray(meet.courses) ? meet.courses[0] : meet.courses
       </div>
 
       {/* Races Grid */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {sortedRaces.map((race) => (
-          <Link
-            key={race.id}
-            href={`/meets/${params.meetId}/races/${race.id}`}
-            className="block bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-200"
-          >
-            <div className="mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">
-                {race.category} {race.gender === 'M' ? 'Boys' : 'Girls'}
-              </h3>
-              
-              <div className="space-y-1 text-sm text-gray-600">
-                <p>👥 {race.total_participants} runners</p>
-                {race.fastest_time && (
-                  <p>⚡ Fastest: {formatTime(race.fastest_time)}</p>
-                )}
-              </div>
-            </div>
+      {sortedRaces.length > 0 ? (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {sortedRaces.map((race) => {
+            // Parse course name to remove redundant distance info
+            const courseNameParts = race.course_name?.split('|') || []
+            const cleanCourseName = courseNameParts[0]?.trim() || race.course_name
             
-            <div className="pt-4 border-t border-gray-100">
-              <span className="text-blue-600 font-medium text-sm">
-                View Results →
-              </span>
-            </div>
-          </Link>
-        ))}
-      </div>
+            return (
+              <Link
+                key={race.id}
+                href={`/meets/${params.meetId}/races/${race.id}`}
+                className="block bg-white rounded-lg shadow-md hover:shadow-lg transition-shadow p-6 border border-gray-200"
+              >
+                <div className="mb-4">
+                  {/* Race Title */}
+                  <h3 className="text-lg font-semibold text-gray-900 mb-3">
+                    {race.name}
+                  </h3>
 
-      {sortedRaces.length === 0 && (
+                  {/* Course Info */}
+                  {cleanCourseName ? (
+                    <div className="text-sm text-gray-600 mb-3 pb-3 border-b border-gray-100">
+                      <p className="font-medium text-gray-700">📍 {cleanCourseName}</p>
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-400 mb-3 pb-3 border-b border-gray-100">
+                      <p>No course assigned</p>
+                    </div>
+                  )}
+                  
+                  {/* Stats */}
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center justify-between">
+                      <span className="text-gray-600">Runners:</span>
+                      <span className="font-semibold text-gray-900">{race.results_count}</span>
+                    </div>
+                    {race.fastest_time && (
+                      <div className="flex items-center justify-between">
+                        <span className="text-gray-600">Fastest:</span>
+                        <span className="font-mono font-semibold text-blue-600">{formatTime(race.fastest_time)}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="pt-4 border-t border-gray-100">
+                  <span className="text-blue-600 font-medium text-sm flex items-center justify-between">
+                    View Results 
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </span>
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      ) : (
         <div className="text-center py-12">
-          <h2 className="text-xl text-gray-600 mb-4">No races found</h2>
+          <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl text-gray-600 mb-2">No races found</h2>
           <p className="text-gray-500">This meet doesn't have any race data yet.</p>
         </div>
       )}

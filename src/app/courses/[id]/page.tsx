@@ -554,12 +554,12 @@ const formatTime = (centiseconds: number): string => {
                   <div className="mt-1">
                     {course.mile_difficulty !== null ? (
                       <div className="flex flex-col space-y-1">
-                        <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.mile_difficulty)} inline-block w-fit`}>
+                       <span className={`px-2 py-1 rounded text-sm font-semibold ${getDifficultyColor(course.mile_difficulty)} inline-block w-fit`}>
                           {getDifficultyLabel(course.mile_difficulty)}
                         </span>
-                        <span className="text-xs text-gray-500">
-                          {course.mile_difficulty.toFixed(3)} multiplier
-                        </span>
+                      <div className="font-bold text-black">
+                    {course.mile_difficulty.toFixed(3)} multiplier
+                  </div>
                       </div>
                     ) : (
                       <span className="px-2 py-1 rounded text-sm bg-gray-100 text-gray-800">
@@ -610,8 +610,12 @@ const formatTime = (centiseconds: number): string => {
               </svg>
             </div>
             <div className="text-sm text-blue-800">
-              <strong>Rating System:</strong> The difficulty rating shows how much harder this course is compared to a 1-mile track race. 
-              For example, 1.125 means 12.5% harder than track mile. The XC Time Rating converts times to Crystal Springs 2.95-mile equivalents for fair comparison across courses.
+              <strong>Rating System:</strong> 
+              <br />
+              The difficulty rating shows how much harder this course is compared to a 1-mile track race. 
+              For example, 1.125 means 12.5% harder than track mile.
+              <br /> <br />
+              The XC Time Rating converts times to Crystal Springs 2.95-mile equivalents for fair comparison across courses; multiply the race result by this rating.
             </div>
           </div>
         </div>
