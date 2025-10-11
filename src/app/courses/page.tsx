@@ -12,10 +12,10 @@ interface Course {
   xc_time_rating: number | null       // NEW: For XC time conversion
   rating_confidence: string
   total_results_count: number
-  meets_count?: number
+  races_count?: number
 }
 
-type SortField = 'name' | 'distance_miles' | 'mile_difficulty' | 'meets_count' | 'total_results_count';
+type SortField = 'name' | 'distance_miles' | 'mile_difficulty' | 'races_count' | 'total_results_count';
 type SortDirection = 'asc' | 'desc';
 
 export default function CoursesPage() {
@@ -95,9 +95,9 @@ export default function CoursesPage() {
           aValue = a.mile_difficulty || 0
           bValue = b.mile_difficulty || 0
           break
-        case 'meets_count':
-          aValue = a.meets_count || 0
-          bValue = b.meets_count || 0
+        case 'races_count':
+          aValue = a.races_count || 0
+          bValue = b.races_count || 0
           break
         case 'total_results_count':
           aValue = a.total_results_count || 0
@@ -331,7 +331,7 @@ export default function CoursesPage() {
                     <SortableHeader field="name">Course Name</SortableHeader>
                     <SortableHeader field="distance_miles">Distance</SortableHeader>
                     <SortableHeader field="mile_difficulty">Difficulty</SortableHeader>
-                    <SortableHeader field="meets_count">Meets</SortableHeader>
+                    <SortableHeader field="races_count">Races</SortableHeader>
                     <SortableHeader field="total_results_count">Total Results</SortableHeader>
                     <th className="py-3 px-4 font-bold text-black">Actions</th>
                   </tr>
@@ -381,7 +381,7 @@ export default function CoursesPage() {
                         </td>
                         <td className="py-4 px-4 text-center">
                           <span className="px-2 py-1 rounded text-sm font-semibold bg-blue-100 text-blue-800">
-                            {course.meets_count || 0}
+                            {course.races_count || 0}
                           </span>
                         </td>
                         <td className="py-4 px-4 text-center">

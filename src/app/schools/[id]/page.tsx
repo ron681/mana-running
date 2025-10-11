@@ -184,25 +184,19 @@ if (athletesError) throw athletesError
                 href={`/schools/${school.id}/records`}
                 className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
               >
-                Records & PRs
+                Records
               </a>
               <a 
                 href={`/schools/${school.id}/seasons`}
                 className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
               >
-                Season History
+                Seasons
               </a>
               <a 
                 href={`/schools/${school.id}/results`}
                 className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
               >
-                Season Results
-              </a>
-              <a 
-                href={`/schools/${school.id}/team-selection`}
-                className="px-6 py-4 text-sm font-medium text-gray-500 hover:text-gray-700 border-b-2 border-transparent hover:border-gray-300"
-              >
-                Team Selection
+                All Results
               </a>
             </nav>
           </div>

@@ -96,7 +96,9 @@ const key = `${result.race.id}_${result.athlete.school.id}`
 ✅ School profile pages  
 ✅ Admin panel with delete functionality  
 ✅ Duplicate athlete cleanup (1,328 duplicates removed)  
-✅ Unique constraint: (first_name, last_name, current_school_id, graduation_year)
+✅ Unique constraint: (first_name, last_name, current_school_id, graduation_year)  
+✅ Scalable database architecture (SQL functions for aggregation, no hard limits)  
+✅ School XC records page with proper database-level queries
 
 ---
 
@@ -107,6 +109,7 @@ const key = `${result.race.id}_${result.athlete.school.id}`
 3. **Loading States** - Better loading indicators throughout app
 4. **Type Safety** - Reduce use of `any` types
 5. **Code Organization** - Extract reusable components from large page files
+6. **Query Scalability Audit** - Review all queries for .limit() usage and replace with SQL functions where needed
 
 ---
 

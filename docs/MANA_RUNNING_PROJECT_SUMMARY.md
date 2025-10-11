@@ -13,6 +13,17 @@
 2. **Athletes:** Personal progress tracking, course PRs, season goals
 3. **Fans:** Meet results, school comparisons, historical data
 
+### Scalability Requirements
+**Database Design Philosophy:** Build for 1,000,000+ records from day one
+- **Never fetch-and-filter** - Use database aggregation and SQL functions
+- **No arbitrary limits** - Queries must work regardless of dataset size
+- **Server-side processing** - Heavy computations happen in PostgreSQL, not JavaScript
+- **Indexed queries** - All common queries must use proper database indexes
+- **Current scale:** 4,477 athletes, ~10,000+ results
+- **Target scale:** 100,000+ athletes, 1,000,000+ results
+
+**Example:** Finding school records should use a SQL function that returns 5-10 rows, not fetching 50,000+ results and processing in JavaScript.
+
 ---
 
 ## 🏗️ TECHNICAL ARCHITECTURE
@@ -48,6 +59,44 @@ ALTER TABLE athletes
 ADD CONSTRAINT athletes_unique_person 
 UNIQUE (first_name, last_name, current_school_id, graduation_year);
 ```
+
+### Database Query Best Practices (CRITICAL)
+
+**Rule 1: Use SQL Functions for Aggregations**
+```sql
+-- ✅ CORRECT: Database does the work
+SELECT * FROM get_school_xc_record('school-id', 'M', NULL);
+-- Returns 1 row with the fastest XC time
+
+-- ❌ WRONG: Fetching all data to JavaScript
+SELECT * FROM results WHERE school_id = '...' LIMIT 10000;
+-- Returns 10,000 rows, then filters in JavaScript
+```
+
+**Rule 2: Never Use Hard Limits**
+```typescript
+// ❌ WRONG: Will break at scale
+.limit(1000)  // Breaks when >1000 results exist
+
+// ✅ CORRECT: Use SQL aggregation
+.rpc('get_top_performances', { school_id: '...', limit: 10 })
+// Only returns the top 10, regardless of total rows
+```
+
+**Rule 3: Index All Common Query Patterns**
+Every query in production should use an index. See `/docs/IMMEDIATE_ACTION_ITEMS.md` for required indexes.
+
+**Rule 4: Pagination for Lists**
+```typescript
+// ✅ CORRECT: Paginate large lists
+.range(startIndex, endIndex)
+
+// ❌ WRONG: Fetch everything
+.select('*')  // No limit at all
+```
+
+**Rule 5: Profile Before Deploying**
+Use `EXPLAIN ANALYZE` in Supabase SQL Editor to verify query performance before deploying to production.
 
 ---
 

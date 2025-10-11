@@ -1,5 +1,5 @@
 // app/meets/[meetId]/races/[raceId]/page.tsx
-import { createClient } from '@/lib/supabase/server'
+import { createServerComponentClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { formatMeetDate, formatTime } from '@/lib/utils'
 import { notFound } from 'next/navigation'
@@ -44,7 +44,7 @@ export default async function RaceResultsPage({
 }: {
   params: { meetId: string; raceId: string }
 }) {
-const supabase = await createClient()
+const supabase = await createServerComponentClient()
 const admin = await isAdmin(supabase)
 
   // Get race details with meet info AND course info (course_id is in races now)
